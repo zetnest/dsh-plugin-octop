@@ -164,9 +164,25 @@ window.__ModuleLoader__.load({
               if (!line) continue
               let frame
               try { frame = JSON.parse(line.slice(5).trim()) } catch (error) { continue }
-              if (frame.chunk) setApproval(null), setHistory(rows => [...(rows || []), { role: 'assistant', text: frame.chunk, __live: true }])
+              if (frame.chunk) {
+                setApproval(null)
+                // 同一轮的增量并进同一个气泡，别让每个 token 都占一行
+                setHistory(rows => {
+                  const list = rows || []
+                  const last = list[list.length - 1]
+                  if (last && last.__live && last.role === 'assistant') {
+                    return [...list.slice(0, -1), { ...last, text: last.text + frame.chunk }]
+                  }
+                  return [...list, { role: 'assistant', text: frame.chunk, __live: true }]
+                })
+              }
               if (frame.approval) setApproval({ summary: frame.approval })
               if (frame.error) setError(frame.error)
+              // 新对话的第一轮结束后把新线程 id 接上，否则第二条消息会再开一条新线程
+              if (frame.done && frame.threadId) {
+                const created = String(frame.threadId)
+                setThread(current => (current && !current.id ? { ...current, id: created, title: current.title || '新对话' } : current))
+              }
             }
             return pump()
           })
