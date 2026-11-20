@@ -75,6 +75,23 @@ window.__ModuleLoader__.load({
       const [sending, setSending] = React.useState(false)
       const [approval, setApproval] = React.useState(null)
 
+      // 系统返回键：面板内部逐层后退，而不是直接退出到最外层
+      React.useEffect(() => {
+        const onPop = () => {
+          setApproval(null); setError('')
+          setExpert(current => {
+            if (current === null) return current
+            setThread(t => {
+              if (t !== null) { setThread(null); setHistory(null); return null }
+              setExpert(null); setThreads(null); return null
+            })
+            return current
+          })
+        }
+        window.addEventListener('popstate', onPop)
+        return () => window.removeEventListener('popstate', onPop)
+      }, [])
+
       React.useEffect(() => {
         let alive = true
         bridge('/experts')
@@ -84,6 +101,7 @@ window.__ModuleLoader__.load({
       }, [ctx])
 
       function openExpert(next) {
+        try { window.history.pushState({ octop: 'threads' }, '') } catch (error) { /* 忽略 */ }
         setExpert(next); setThreads(null); setThread(null); setHistory(null); setError('')
         bridge('/threads?agent=' + encodeURIComponent(next.id))
           .then(list => setThreads(Array.isArray(list) ? list : []))
@@ -91,6 +109,7 @@ window.__ModuleLoader__.load({
       }
 
       function openThread(next) {
+        try { window.history.pushState({ octop: 'messages' }, '') } catch (error) { /* 忽略 */ }
         setThread(next); setHistory(null); setError('')
         bridge('/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(next.id))
           .then(list => setHistory(Array.isArray(list) ? list : []))
@@ -180,7 +199,7 @@ window.__ModuleLoader__.load({
       if (!thread) {
         return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } },
-            back(() => { setExpert(null); setThreads(null) }),
+            back(() => window.history.back()),
             h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 600 } }, expert.name)),
           threads === null ? h('p', { style: muted }, '加载线程…') : null,
           threads !== null && threads.length === 0 ? h('p', { style: muted }, '这个专家还没有线程') : null,
@@ -192,7 +211,7 @@ window.__ModuleLoader__.load({
 
       return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } },
-          back(() => { setThread(null); setHistory(null) }),
+          back(() => window.history.back()),
           h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 600 } }, thread.title || thread.id)),
         history === null ? h('p', { style: muted }, '加载历史…') : null,
         (history || []).map((message, index) => h('div', { key: index, style: bubble },
