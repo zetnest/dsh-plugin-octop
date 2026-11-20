@@ -10,8 +10,23 @@
 | 部分 | 状态 |
 |---|---|
 | Octop 侧接口契约 | ✅ **已实测通过**（Octop `1.0.3b7` @ `http://192.168.3.80:8088`，2026-11-20） |
-| 插件代码（6 个工具 + 自动登录续期） | 已写完，**未在 DSH 内实际挂载运行过**（端侧无 JS 运行时，需装进应用后验证） |
-| 安装通道 | 端侧只认 npm 包 / GitHub 仓库，仓库待定 |
+| 插件代码（6 个工具 + 自动登录续期） | ✅ **已装机验证**（DSHM 端侧，bundle 方式挂载，6 个工具全部跑通） |
+| 安装通道 | 端侧安装器只认 npm 包名 / github.com；Forgejo 的 npm registry 包已发布，但安装器不读自定义 registry（3 处 `installer.json` 实测无效），当前为本地 bundle 挂载 |
+| GitHub 镜像 | ⚠️ Forgejo → GitHub 推送被 TLS 重置（跨境网络），待代理/SSH:443 解决 |
+
+### 真机验证记录（2026-11-20）
+
+| 工具 | 结果 |
+|---|---|
+| `octop_status` | ✅ 连通、`1.0.3b7`、登录 seven(admin)、MCP 可用、6 个专家 |
+| `octop_experts` | ✅ 只列 `kind=expert`（managed/team 被排除） |
+| `octop_chat` | ✅ 新开线程 + 返回 `thread_id` + 回复 |
+| `octop_chat`（带 thread_id） | ✅ 续聊，专家记住了上一轮问题 |
+| `octop_threads` | ✅ 3 条线程，标题/时间正确 |
+| `octop_history` | ✅ 消息角色/正文正确，`thinking` 块被过滤 |
+| `octop_approve` | ⚠️ 只验了「无待审批线程」分支：Octop 返回 `status=completed` + 空 response，插件不报错；真实审批场景尚未触发 |
+
+已知小瑕疵（下次重启顺手修）：无待审批线程上调用 `octop_approve` 时，空 `response` 会让 render 回显原始 JSON。
 
 ### 实测到的真实契约（和文档有出入，代码已按实测改）
 
