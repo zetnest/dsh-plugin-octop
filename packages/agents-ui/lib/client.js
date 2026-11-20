@@ -187,7 +187,13 @@ window.__ModuleLoader__.load({
       }
 
       if (!expert) {
+        const bridges = (() => {
+          try {
+            return Object.keys(window).filter(key => /dsh|dshm|native|bridge|android|back/i.test(key)).slice(0, 12)
+          } catch (error) { return [] }
+        })()
         return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
+          h('div', { style: { ...muted, marginBottom: 8 } }, '宿主桥探测: ' + (bridges.length ? bridges.join(', ') : '(无)')),
           h('h2', { style: { margin: '0 0 12px', fontSize: 18, fontWeight: 600 } }, PANEL_TITLE),
           experts === null ? h('p', { style: muted }, '加载专家…') : null,
           experts !== null && experts.length === 0 ? h('p', { style: muted }, '没有可调用的专家') : null,
