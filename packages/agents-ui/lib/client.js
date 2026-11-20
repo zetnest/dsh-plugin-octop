@@ -74,6 +74,7 @@ window.__ModuleLoader__.load({
       const [draft, setDraft] = React.useState('')
       const [sending, setSending] = React.useState(false)
       const [approval, setApproval] = React.useState(null)
+      const [sources, setSources] = React.useState([])
       const expertRef = React.useRef(null)
       const threadRef = React.useRef(null)
       React.useEffect(() => { expertRef.current = expert }, [expert])
@@ -112,6 +113,12 @@ window.__ModuleLoader__.load({
         }
         window.addEventListener('popstate', onPop)
         return () => window.removeEventListener('popstate', onPop)
+      }, [])
+
+      React.useEffect(() => {
+        let alive = true
+        bridge('/sources').then(list => { if (alive) setSources(Array.isArray(list) ? list : []) }).catch(() => {})
+        return () => { alive = false }
       }, [])
 
       React.useEffect(() => {
@@ -211,6 +218,11 @@ window.__ModuleLoader__.load({
       if (!expert) {
         return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
           h('h2', { style: { margin: '0 0 12px', fontSize: 18, fontWeight: 600 } }, PANEL_TITLE),
+          sources.length > 1 ? h('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
+            sources.map((source, index) => h('span', {
+              key: source.id,
+              style: { ...muted, padding: '4px 10px', borderRadius: 999, border: '1px solid rgba(127,127,127,0.3)', opacity: source.available === false ? 0.45 : (index === 0 ? 1 : 0.7) },
+            }, source.label + (source.available === false ? '（未接入）' : '')))) : null,
           experts === null ? h('p', { style: muted }, '加载专家…') : null,
           experts !== null && experts.length === 0 ? h('p', { style: muted }, '没有可调用的专家') : null,
           (experts || []).map(item => h('button', { key: item.id, type: 'button', style: row, onClick: () => openExpert(item) },
