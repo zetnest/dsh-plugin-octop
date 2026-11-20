@@ -85,8 +85,22 @@
 - 运行中的 host 若 `/status.startedAt` 早于提交时间，说明还没重启，见上面「工作纪律」
 
 ## 下一步
-1. acp 源（Agent Client Protocol，一次覆盖 Claude Code / Gemini CLI / 等）
-   **前提**：端侧没有 claude/gemini/codex 二进制，只能先做「有二进制才 available」的适配器，真机验不了对话
+1. acp 源（骨架已提交，见下）
+2. 各 CLI 源 / 清理 / GitHub 镜像
+3. **端侧进程创建是硬限制（E15）**：acp / cli 源要真能用，得先解决「宿主能 spawn 子进程」
+   或改成「VM 里跑 CLI + 桥接」。目前 acp 源只做到：探测二进制 → 没有就置灰说明原因，
+   有再尝试 spawn（错误原样回面板）。
+
+## ACP 源现状（`lib/acp.js`，2026-11-21）
+- 核心 `@deepseek-ai/dsh-acp` 是 **ACP server**（DSH 当 agent），不是客户端；
+  插件解析不到核心 `@agentclientprotocol/sdk`，所以自己写最小客户端：
+  NDJSON 分帧 + JSON-RPC 2.0 + initialize / session-new / session-prompt /
+  session-update / request-permission（默认自动选 allow_once，否则取消）。
+- 按需 `await import('./acp.js')`：写坏了也只影响 acp 源，不会拖垮 octop/dsh。
+- 探测命令：`claude-code-acp` / `gemini --experimental-acp` / `qwen --experimental-acp`，
+  扫 PATH + /system/bin、/usr/local/bin、/usr/bin。
+- 未验证项：真实 ACP agent 握手、流式 update、权限请求；端侧没有二进制，只能到「置灰 + 说明」为止。
+- 线程与消息只在内存（ACP 无历史接口），重启即丢；上限 50 条。
 2. 各 CLI 源（codex / opencode / pi），按实际使用逐个补
 3. 清理：profile 里 typert 方案拷的 6 个依赖（cordis/cosmokit/dsh-typert-protocol/dsh-brand/
    @standard-schema/spec/zod）——**删前先确认没有别的插件从 profile 根解析它们**

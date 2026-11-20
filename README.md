@@ -61,8 +61,9 @@ dsh-plugin-octop/
 │   ├── client.js   # REST 客户端：登录换 JWT、令牌缓存/提前续期、401 重登、超时
 │   ├── mcp.js      # Octop Agent MCP 网关最小客户端（initialize / tools/list / tools/call）
 │   ├── tools.js    # 6 个模型可见工具的定义与投影
-│   ├── backends.js # 多源注册表：octop + dsh（本进程 subagent）
+│   ├── backends.js # 多源注册表：octop + dsh（本进程 subagent）+ acp
 │   ├── bridge.js   # 127.0.0.1:8791 的 HTTP/SSE 桥，路由 /api/<源>/…
+│   ├── acp.js      # ACP 客户端（NDJSON JSON-RPC）：探测/连接外部 ACP agent
 │   └── ws.js       # Octop 对话 WebSocket 通道（非 MCP 线程续聊）
 ├── scripts/
 │   └── octop-m0.py # M0 冒烟：不装插件也能验证 Octop 网络/账号/接口形状
@@ -79,7 +80,8 @@ dsh-plugin-octop/
 |---|---|---|---|
 | `octop` | 远端 Octop 专家（REST + MCP 网关） | Octop thread_id | ✅ 真机验证 |
 | `dsh` | 本进程 subagent（`ctx.subagents`，provider=spawn） | continuable 子会话的 Session id | 代码完成，待重启验证 |
-| `acp` / `cli` | Agent Client Protocol / 各 CLI | — | 未开始 |
+| `acp` | 外部 ACP agent（Claude Code / Gemini CLI / Qwen Code） | ACP sessionId | 骨架完成，未真机验证（端侧无二进制 + spawn 受限） |
+| `cli` | 各 CLI（codex / opencode / pi…） | — | 未开始 |
 
 dsh 源要点：
 
@@ -185,3 +187,15 @@ python3 scripts/octop-m0.py --base http://192.168.1.10:8088 --user admin --pass 
 - 跨公网务必 HTTPS（Bearer 令牌）。
 - Octop 登录默认 5 次失败锁 15 分钟，插件不会重试登录，只会在 401 时重登一次。
 - 插件只能操作当前账号有权限的资源；`octop_experts` 只看得到自己的 + 共享给你的专家。
+
+
+## ACP 源（骨架）
+
+- 核心的 `@deepseek-ai/dsh-acp` 是 **server**（把 DSH 暴露成 ACP agent），不是客户端；
+  插件又解析不到核心 `node_modules` 里的 `@agentclientprotocol/sdk`，所以 `lib/acp.js`
+  自己实现了 ACP 客户端需要的最小集：NDJSON 分帧 + JSON-RPC 2.0 + `initialize` /
+  `session/new` / `session/prompt` / `session/update` / `session/request_permission`。
+- 探测：在 `PATH` + `/system/bin`、`/usr/local/bin`、`/usr/bin` 里找
+  `claude-code-acp`、`gemini`、`qwen`；一个都没有时源置灰并说明找过什么。
+- 限制：端侧进程创建受限（HANDOFF E15），装了 CLI 也未必能 spawn；错误会原样回给面板。
+  ACP 没有统一的历史读取接口，线程/消息只活在内存里，重启即丢。
