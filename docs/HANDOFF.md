@@ -16,6 +16,24 @@
 - Octop 无 CORS，浏览器不能直连；安装器不读自定义 npm registry；不认自部署 git URL
 - 安装器从 codeload.github.com 拉 tarball（github.com 本机 TLS 被重置，镜像推不上去）
 
+## 多源聚合设计（已定稿，按此实现）
+
+backend 接口（每个源实现这 5 个方法，面板只认接口不认源）：
+  status()                    -> {label, available, detail}
+  listAgents()                -> [{id, name, description}]
+  listThreads(agentId)        -> [{id, title, updatedAt, writable}]
+  history(agentId, threadId)  -> [{role, text}]
+  send(agentId, threadId, prompt, onChunk) -> {threadId, status, approval}
+
+接入优先级（按成本排序）：
+  1. dsh    —— 本进程 subagent（ctx.subagent / dsh-subagent），天然带工具，适配成本最低
+  2. acp    —— Agent Client Protocol，一次覆盖 Claude Code / Gemini CLI 等一批（核心已有 dsh-acp）
+  3. octop  —— 已完成，作为自托管平台样板
+  4. cli    —— codex / opencode / pi 等，按实际使用逐个补
+
+桥的路由改成带源前缀：/api/<source>/experts|threads|history|chat-stream
+未指定源时默认 octop，保持旧路径兼容（面板先不改也能跑）。
+
 ## 下一步
 1. SSE 透传 approval 帧（面板审批在流式模式可用）
 2. 多源聚合：backend 接口 {listAgents,listThreads,history,send,status}；先 octop，再 codex/claude/opencode/pi；面板顶部源切换
