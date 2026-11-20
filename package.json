@@ -1,0 +1,19 @@
+{
+  "name": "dsh-plugin-octop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "在 DSH 里操作 Octop：列专家、调用专家、线程/历史、审批续跑（纯 JS，无原生依赖）",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.5"
+  }
+}

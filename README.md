@@ -1,0 +1,144 @@
+# dsh-plugin-octop
+
+在 DSH 里操作 [Octop](https://github.com/TencentCloud/Octop)（腾讯开源的自托管多 Agent AI 助手）。
+
+用法：DSH 里直接说「让 Octop 的 XX 专家帮我做 YY」，模型会调用下面的工具；专家干活、
+你续聊、审批工具动作都在同一个会话里完成。
+
+## 状态
+
+| 部分 | 状态 |
+|---|---|
+| Octop 侧接口契约 | ✅ **已实测通过**（Octop `1.0.3b7` @ `http://192.168.3.80:8088`，2026-11-20） |
+| 插件代码（6 个工具 + 自动登录续期） | 已写完，**未在 DSH 内实际挂载运行过**（端侧无 JS 运行时，需装进应用后验证） |
+| 安装通道 | 端侧只认 npm 包 / GitHub 仓库，仓库待定 |
+
+### 实测到的真实契约（和文档有出入，代码已按实测改）
+
+| 项 | 实测结果 |
+|---|---|
+| health | `{ok, started_at, db, users_loaded, agents_running, channels:[…]}`，无 version 字段 |
+| 登录 | `{access_token, expires_in, token_type, user}`，**没有顶层 `role`**（role 在 JWT 载荷里） |
+| 专家列表 | `GET /api/agents` 返回数组，每项同时有 `id`（数字）和 `agent_id`（如 `TEGCKN`） |
+| REST 路由 | `/api/agents/{agent_id}/threads…` 用 **agent_id 字符串**；传数字 id 报 `404 AGENT_NOT_FOUND` |
+| MCP 握手 | `2025-06-18` 成功，`serverInfo = octop-agent-mcp-gateway 1.0.3b7` |
+| MCP 专家范围 | 网关只开放 `kind=expert`；`kind=managed`（coder）和 `kind=team`（开发团队）**不在网关里**，调用报 `expert 'X' not found` |
+| `call_octop_expert` | 入参 `{expert_id:string, message:string, thread_id?:string}`，必填前两个 |
+| 成功返回 | `{status:"completed", expert_id, thread_id:"thr_…", response, usage}` —— 回复字段是 **`response`** |
+| `resume_octop_expert` | 入参 `{expert_id, thread_id, decisions:[{type:"approve"\|"edit"\|"reject"\|"respond", message?, edited_action?}]}` |
+| 线程列表 | `[{thread_id, title, channel_type, last_active(epoch 秒), turn_active, awaiting_user, …}]` |
+| 线程历史 | `{messages:[{role, content:[{type:"text",text} \| {type:"thinking",thinking}]}], turn_active, hitl_pending, history_status}` |
+| 错误形态 | MCP 工具失败走 `isError:true` + `structuredContent.error`，HTTP 仍 200 |
+
+### 还没验证的
+
+- **审批的返回体形状**：实测那位专家策略自动放行（直接写文件成功），没触发 `approval_required`；
+  `decisions` 的 schema 已确认，`octop_approve` 的 MCP + REST 两条路都写好了，等真实审批场景验。
+- 长任务（超过 `chatTimeoutMs` 15 分钟）与流式增量输出。
+
+## 目录
+
+```
+dsh-plugin-octop/
+├── lib/
+│   ├── index.js    # cordis 插件入口：收敛配置、注册工具
+│   ├── client.js   # REST 客户端：登录换 JWT、令牌缓存/提前续期、401 重登、超时
+│   ├── mcp.js      # Octop Agent MCP 网关最小客户端（initialize / tools/list / tools/call）
+│   └── tools.js    # 6 个模型可见工具的定义与投影
+├── scripts/
+│   └── octop-m0.py # M0 冒烟：不装插件也能验证 Octop 网络/账号/接口形状
+└── examples/
+    └── cordis-entry.yml
+```
+
+## 工具
+
+| 工具 | 作用 |
+|---|---|
+| `octop_status` | 自检：baseUrl 可达、账号能登录、Agent MCP 是否可用、有哪些专家 |
+| `octop_experts` | 列**可调用**专家（`kind=expert`；agent_id / 名称 / 描述 / 模型 / 是否运行中） |
+| `octop_chat` | 让某专家跑一轮对话，返回回复 + `thread_id`；带 `thread_id` 即续聊 |
+| `octop_threads` | 列某专家的对话线程 |
+| `octop_history` | 读线程历史，报告 `turn_active` / `hitl_pending` |
+| `octop_approve` | 专家等审批时提交 `approve` / `reject` / `respond` 并续跑 |
+
+`expert` 参数吃专家名或 `agent_id`（如 `TEGCKN`）；`octop_experts` 输出的就是可调用的那批，
+`kind=managed` / `kind=team` 的 agent 会被明确拒掉并说明原因。
+
+## 配置
+
+`examples/cordis-entry.yml`：
+
+```yaml
+- insert:
+    - name: dsh-plugin-octop
+      config:
+        baseUrl: http://192.168.1.10:8088
+        username: dsh
+        password: '********'
+        defaultExpert: 我的助手   # 可省：只配一个专家时可省略 expert 参数
+        timeoutMs: 60000          # 普通请求，默认 60s
+        chatTimeoutMs: 900000     # 专家对话/审批续跑，默认 15min
+```
+
+## M0 冒烟（先做这个）
+
+在**这台设备上**跑（用的是宿主 Python，能直连局域网）：
+
+```bash
+python3 scripts/octop-m0.py --config ~/.octop-m0.json
+# 或者：
+python3 scripts/octop-m0.py --base http://192.168.1.10:8088 --user admin --pass 'xxx'
+```
+
+`~/.octop-m0.json`：
+
+```json
+{ "base": "http://192.168.1.10:8088", "user": "admin", "pass": "xxx" }
+```
+
+它会依次验证 health → 登录 → 专家列表 → MCP 握手 → `tools/list`，并把三个工具的
+**真实参数名**打印出来；加 `--prompt '你好'` 还会真跑一轮专家对话，再读线程历史。
+
+这一步的意义：插件里对 MCP 参数名做了自适应映射（`expert_id|agent_id|id`、
+`message|prompt|content`、`thread_id|conversation_id`），但**只有看到真实 inputSchema
+才能确认没有漏项**；顺便验证网络、账号、令牌 24h 机制。
+
+## 装进 DSH 的两种路径
+
+1. **正式（推荐，待仓库）**：推到 GitHub 或用 npm 发布，然后
+   `pnpm add github.com/<owner>/<repo>`（或 `pnpm add dsh-plugin-octop`），
+   装完**重启 DSHM 应用**才挂载。设置 → 插件 页也能装。
+2. **临时手挂（未验证）**：把包放进 `$DSH_HOME/profiles/ondevice/node_modules/`，
+   在 `$DSH_HOME/cordis.patch.yml` 里 insert 一行插件条目，重启应用。
+   核心 loader 的裸模块解析根不一定包含 profile 目录，所以这条路可能报
+   `Cannot find package`；失败就老实走第 1 条。
+
+## 设计取舍
+
+- **专家调用走 Agent MCP 而不是自己接 WebSocket**：`/api/mcp/agents` 是官方为外部程序
+  提供的入口，审批语义（`approval_required` + `resume_octop_expert`）白送；不用自己处理
+  WS 重连、`subscribe`、帧格式。
+- **线程/历史走 REST**：MCP 不提线程列表和历史，REST 有完整端点。
+- **不用 `defineTool` / `schemastery`**：端侧只能装纯 JS，第三方插件的模块解析到不了
+  DSH 核心包的 `node_modules`；零依赖 = 少一类装不上的原因。工具定义直接产出 registry
+  认的 `ToolDefinition` 形状（`parameters` / `output.schema` 用完整 JSON Schema）。
+- **令牌不落盘**：只在内存里缓存，过期前 2 分钟自动重登，401 再重登一次。密码在插件
+  配置里（profile 配置文件），建议给 DSH 单独开一个 Octop 账号，别用管理员密码。
+- **未知字段一律兜底**：`thread_id`/`reply`/`status` 都做了多名候选提取，服务端字段名
+  变了不会直接崩，最差退化成把整个返回体当文本。
+
+## 已知不确定点 / 后续改进
+
+1. 审批的返回体形状没实测（当前那位专家自动放行）；`octop_approve` 里 MCP 与 REST 两条路都已实现。
+2. `hitl_pending` 的具体结构（插件目前直接把它 JSON 化展示）。
+3. 长任务：`call_octop_expert` 同步等回复，超过 `chatTimeoutMs` 会超时；后续可改成
+   「先返回 thread_id，再轮询 history」。
+4. 流式输出：目前拿整段回复，没有逐字增量（DSH 侧要增量得走 WS，M2 再评估）。
+5. `agent_id` 会在 Octop 重建专家时变化，插件每次都实时拉列表，不缓存跨进程的 id。
+
+## 安全
+
+- 跨公网务必 HTTPS（Bearer 令牌）。
+- Octop 登录默认 5 次失败锁 15 分钟，插件不会重试登录，只会在 401 时重登一次。
+- 插件只能操作当前账号有权限的资源；`octop_experts` 只看得到自己的 + 共享给你的专家。

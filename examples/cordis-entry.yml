@@ -1,0 +1,14 @@
+# 把 dsh-plugin-octop 挂进 DSH 的条目示例（写进 $DSH_HOME/cordis.patch.yml）。
+#
+# 注意：正式路径是走安装通道（pnpm add <npm包|github仓库>），由 DSHM 写入条目；
+# 下面这段用于「包已经能在模块解析路径里找到」之后的手工挂载，或者作为安装器
+# 生成条目的参考形状。
+- insert:
+    - name: dsh-plugin-octop
+      config:
+        baseUrl: http://192.168.1.10:8088
+        username: dsh
+        password: 'REPLACE_ME'
+        defaultExpert: ''
+        timeoutMs: 60000
+        chatTimeoutMs: 900000
