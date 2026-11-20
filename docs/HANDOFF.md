@@ -34,6 +34,11 @@ backend 接口（每个源实现这 5 个方法，面板只认接口不认源）
 桥的路由改成带源前缀：/api/<source>/experts|threads|history|chat-stream
 未指定源时默认 octop，保持旧路径兼容（面板先不改也能跑）。
 
+## 端侧壳约定（实测）
+- window.__DSHM_BACK__ = { consume, state }：系统返回键由宿主调用 consume() 询问页面是否消费；
+  面板把它包一层，有层级时自己退一层并返回 true。包装标记 __octopWrapped 防重复。
+- 同批可用桥：__DSHM_BRIDGES__、__DSHM_BRIDGE_CONTRACT__、dshmBridge
+
 ## 下一步
 1. SSE 透传 approval 帧（面板审批在流式模式可用）
 2. 多源聚合：backend 接口 {listAgents,listThreads,history,send,status}；先 octop，再 codex/claude/opencode/pi；面板顶部源切换
