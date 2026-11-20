@@ -45,8 +45,9 @@
 - 起子会话：`ctx.subagents.startActivation({ provider:'spawn'|'fork', label, prompt:[{type:'text',text}],
   parent, signal, delivery:'caller' })`；`parent` 必须是 `ctx.agents.get(id)` 返回的**同一个对象**
   （`startActivation` 校验对象身份，不是 id 相等）
-- 返回 `{ childId, name, result, dispose }`；**`result` 只在 dispose/父会话 teardown 时才 resolve**，
-  continuable 子会话不能 await 它拿第一轮回复 → 必须轮询子会话日志等 `turn/end`
+- 返回 `{ childId, name, result, dispose }`；local 子会话一轮结束就被 `watchLocalSettlement`
+  自动 close，`result` 在这一轮收尾时 resolve——但 await 它等于「等整轮收拾完」，面板拿不到
+  中间进度 → 本实现轮询子会话日志等 `turn/end`（400ms）
 - 续聊：`ctx.subagents.sendMessage(parent, childId, blocks, { signal })`；
   signal 只管投递，不管这一轮执行；超时用 `ctx.subagents.interrupt(childId, { kind:'user' })`
 - 线程列表：`ctx.subagents.listDescendants(sessionId)`，条目有 `{id,parentId,mode,label,createdAt}`，
@@ -56,8 +57,10 @@
   用完 `observation[Symbol.dispose]()`；只读 `header.origin === 'subagent'` 的会话
 - 流式：`ctx.on('agent/assistant-stream', ({agent, frame}) => …)`，只要 `frame.type==='chunk'`
   且 `frame.chunk.type==='text-delta'`；事件是全局的，按子 agent id 过滤
-- 父会话：面板传 `session`；没传就取 `ctx.agents.list()` 里最近创建的顶层会话
-  （`session.header.origin !== 'subagent'`）
+- 父会话：面板传 `session`（client 侧 `ctx.sessions.list.getSnapshot().byId` 里
+  `retainedBy.mainView > 0` 的那条，localStorage 兜底）；会话已不在运行时回落到
+  `ctx.agents.list()` 里最近创建的顶层会话（`origin !== 'subagent'`）。
+  续聊优先用 `threadParents` 里记住的创建者父会话，避免面板切了主视图就 UNAUTHORIZED。
 - 零依赖：插件不 import DSH 核心包，只通过 ctx.get 拿服务
 
 ## 桥路由（新）
@@ -79,6 +82,10 @@
 3. 同一条 DSH 线程续聊第二句（上下文保留）✅
 4. 切回 Octop：老的专家/线程/历史/流式/审批不回归（专家列表 ✅；流式/审批待肉眼确认）
 5. 新建第二条 DSH 对话，两条线程都出现在线程列表 ✅
+
+## 参考资料
+- `docs/dsh-subagent-api-notes.md`：并行会话留下的源码级 API 笔记（含本仓库的实测校正），
+  写 dsh 源前值得先扫一遍。
 
 ## 当前 git 状态
 - `48a217a` 起：dsh 源 + 面板修复 + 通知拦截，Forgejo `main` 已同步

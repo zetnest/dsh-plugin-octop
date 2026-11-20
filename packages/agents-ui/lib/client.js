@@ -41,6 +41,39 @@ window.__ModuleLoader__.load({
       return fetchWithSource(sourceId, path, init)
         .then(response => response.ok ? response.json() : response.text().then(text => { throw new Error('桥返回 ' + response.status + ': ' + text.slice(0, 160)) }))
     }
+    /** 面板认为的「当前主视图会话」缓存键（client store 拿不到时兜底）。 */
+    const SESSION_KEY = 'octop.session'
+
+    /**
+     * 当前主视图会话 id：client 侧 sessions store 里被 mainView retain 的那条
+     * （工作区导航用的是同一判据：`row.retainedBy.mainView > 0`）。
+     * 拿不到就退回 localStorage 里上次记住的 id；再拿不到返回空串（桥会退回「最近创建的活会话」）。
+     */
+    function mainSessionId(ctx) {
+      let found = ''
+      try {
+        const store = ctx && typeof ctx.get === 'function' ? ctx.get('sessions') : null
+        const snapshot = store && store.list && typeof store.list.getSnapshot === 'function' ? store.list.getSnapshot() : null
+        const byId = snapshot && snapshot.byId
+        if (byId && typeof byId === 'object') {
+          for (const row of Object.values(byId)) {
+            if (row && row.retainedBy && (row.retainedBy.mainView || 0) > 0) { found = String(row.id || ''); break }
+          }
+        }
+      } catch (error) { /* client store 不在：走兜底 */ }
+      if (found) {
+        try { window.localStorage.setItem(SESSION_KEY, found) } catch (error) { /* 隐私模式忽略 */ }
+        return found
+      }
+      try { return String(window.localStorage.getItem(SESSION_KEY) || '') } catch (error) { return '' }
+    }
+
+    /** 给 URL 追加 session 参数（空串则原样返回）。 */
+    function withSession(path, sessionId) {
+      if (!sessionId) return path
+      return path + (path.includes('?') ? '&' : '?') + 'session=' + encodeURIComponent(sessionId)
+    }
+
     const row = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', margin: '2px 0', border: 'none', borderRadius: 8, background: 'transparent', color: 'inherit', cursor: 'pointer' }
     const muted = { opacity: 0.6, fontSize: 12 }
     const bubble = { padding: '10px 12px', borderRadius: 10, background: 'rgba(127,127,127,0.08)', marginBottom: 8 }
@@ -129,7 +162,7 @@ window.__ModuleLoader__.load({
       function openExpert(next) {
         try { window.history.pushState({ octop: 'threads' }, '') } catch (error) { /* 忽略 */ }
         setExpert(next); setThreads(null); setThread(null); setHistory(null); setError('')
-        bridgeApi(source, '/threads?agent=' + encodeURIComponent(next.id))
+        bridgeApi(source, withSession('/threads?agent=' + encodeURIComponent(next.id), mainSessionId(ctx)))
           .then(list => setThreads(Array.isArray(list) ? list : []))
           .catch(err => setError(String(err && err.message ? err.message : err)))
       }
@@ -137,13 +170,13 @@ window.__ModuleLoader__.load({
       function openThread(next) {
         try { window.history.pushState({ octop: 'messages' }, '') } catch (error) { /* 忽略 */ }
         setThread(next); setHistory(null); setError('')
-        bridgeApi(source, '/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(next.id))
+        bridgeApi(source, withSession('/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(next.id), mainSessionId(ctx)))
           .then(list => setHistory(Array.isArray(list) ? list : []))
           .catch(err => setError(String(err && err.message ? err.message : err)))
       }
 
       function reloadHistory(threadId) {
-        bridgeApi(source, '/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(threadId))
+        bridgeApi(source, withSession('/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(threadId), mainSessionId(ctx)))
           .then(list => setHistory(Array.isArray(list) ? list : []))
           .catch(err => setError(String(err && err.message ? err.message : err)))
       }
@@ -153,7 +186,7 @@ window.__ModuleLoader__.load({
         return fetchWithSource(source, '/chat-stream', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ agent: expert.id, thread: target, prompt, source }),
+          body: JSON.stringify({ agent: expert.id, thread: target, prompt, source, session: mainSessionId(ctx) }),
         }).then(response => {
           if (!response.ok) throw new Error('桥返回 ' + response.status)
           const reader = response.body.getReader()
