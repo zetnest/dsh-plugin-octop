@@ -74,8 +74,30 @@ window.__ModuleLoader__.load({
       const [draft, setDraft] = React.useState('')
       const [sending, setSending] = React.useState(false)
       const [approval, setApproval] = React.useState(null)
+      const expertRef = React.useRef(null)
+      const threadRef = React.useRef(null)
+      React.useEffect(() => { expertRef.current = expert }, [expert])
+      React.useEffect(() => { threadRef.current = thread }, [thread])
 
-      // 系统返回键：面板内部逐层后退，而不是直接退出到最外层
+      // 系统返回键：宿主通过 window.__DSHM_BACK__.consume() 询问页面是否消费
+      React.useEffect(() => {
+        const bridge = window.__DSHM_BACK__
+        if (!bridge || typeof bridge.consume !== 'function' || bridge.__octopWrapped) return
+        const original = bridge.consume.bind(bridge)
+        bridge.__octopWrapped = true
+        bridge.consume = (...args) => {
+          // 有层级就自己退一层并声明已消费
+          if (expertRef.current !== null) {
+            if (threadRef.current !== null) { setThread(null); setHistory(null); setApproval(null) }
+            else { setExpert(null); setThreads(null) }
+            return true
+          }
+          return original(...args)
+        }
+        return () => { bridge.consume = original; bridge.__octopWrapped = false }
+      }, [])
+
+      // 浏览器/网页容器内的返回（保留）
       React.useEffect(() => {
         const onPop = () => {
           setApproval(null); setError('')
@@ -187,20 +209,7 @@ window.__ModuleLoader__.load({
       }
 
       if (!expert) {
-        const bridges = (() => {
-          try {
-            const out = []
-            const back = window.__DSHM_BACK__
-            out.push('BACK:' + typeof back)
-            if (typeof back === 'function') out.push('src=' + String(back).slice(0, 120))
-            else if (back && typeof back === 'object') out.push('keys=' + Object.keys(back).join('|'))
-            const contract = window.__DSHM_BRIDGE_CONTRACT__
-            if (contract && typeof contract === 'object') out.push('contract=' + Object.keys(contract).slice(0, 8).join('|'))
-            return out
-          } catch (error) { return ['probe error: ' + error.message] }
-        })()
         return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
-          h('div', { style: { ...muted, marginBottom: 8 } }, '宿主桥探测: ' + (bridges.length ? bridges.join(', ') : '(无)')),
           h('h2', { style: { margin: '0 0 12px', fontSize: 18, fontWeight: 600 } }, PANEL_TITLE),
           experts === null ? h('p', { style: muted }, '加载专家…') : null,
           experts !== null && experts.length === 0 ? h('p', { style: muted }, '没有可调用的专家') : null,
