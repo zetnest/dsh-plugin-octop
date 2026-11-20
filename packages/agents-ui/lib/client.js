@@ -189,8 +189,15 @@ window.__ModuleLoader__.load({
       if (!expert) {
         const bridges = (() => {
           try {
-            return Object.keys(window).filter(key => /dsh|dshm|native|bridge|android|back/i.test(key)).slice(0, 12)
-          } catch (error) { return [] }
+            const out = []
+            const back = window.__DSHM_BACK__
+            out.push('BACK:' + typeof back)
+            if (typeof back === 'function') out.push('src=' + String(back).slice(0, 120))
+            else if (back && typeof back === 'object') out.push('keys=' + Object.keys(back).join('|'))
+            const contract = window.__DSHM_BRIDGE_CONTRACT__
+            if (contract && typeof contract === 'object') out.push('contract=' + Object.keys(contract).slice(0, 8).join('|'))
+            return out
+          } catch (error) { return ['probe error: ' + error.message] }
         })()
         return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
           h('div', { style: { ...muted, marginBottom: 8 } }, '宿主桥探测: ' + (bridges.length ? bridges.join(', ') : '(无)')),
