@@ -103,25 +103,45 @@ window.__ModuleLoader__.load({
           .catch(err => setError(String(err && err.message ? err.message : err)))
       }
 
+      function sendStream(prompt) {
+        const target = thread.id || ''
+        return fetch(BRIDGE + '/chat-stream', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + BRIDGE_TOKEN, 'content-type': 'application/json' },
+          body: JSON.stringify({ agent: expert.id, thread: target, prompt }),
+        }).then(response => {
+          if (!response.ok) throw new Error('桥返回 ' + response.status)
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
+          const pump = () => reader.read().then(({ done, value }) => {
+            if (done) return
+            buffer += decoder.decode(value, { stream: true })
+            let index
+            while ((index = buffer.indexOf('\n\n')) >= 0) {
+              const event = buffer.slice(0, index)
+              buffer = buffer.slice(index + 2)
+              const line = event.split('\n').find(row => row.startsWith('data:'))
+              if (!line) continue
+              let frame
+              try { frame = JSON.parse(line.slice(5).trim()) } catch (error) { continue }
+              if (frame.chunk) setApproval(null), setHistory(rows => [...(rows || []), { role: 'assistant', text: frame.chunk, __live: true }])
+              if (frame.approval) setApproval({ summary: frame.approval })
+              if (frame.error) setError(frame.error)
+            }
+            return pump()
+          })
+          return pump()
+        })
+      }
+
       function send() {
         const prompt = draft.trim()
         if (!prompt || sending) return
         setSending(true); setError('')
-        fetch(BRIDGE + '/chat', {
-          method: 'POST',
-          headers: { authorization: 'Bearer ' + BRIDGE_TOKEN, 'content-type': 'application/json' },
-          body: JSON.stringify({ agent: expert.id, thread: thread.id, prompt }),
-        }).then(response => response.ok ? response.json() : response.text().then(text => { throw new Error('桥返回 ' + response.status + ': ' + text.slice(0, 200)) }))
-          .then(value => {
-            setDraft('')
-            const nextId = value && value.threadId ? value.threadId : thread.id
-            if (nextId !== thread.id) {
-              // Octop 只允许续 MCP 创建的线程：换了线程就切过去，并把旧线程标成已断开
-              setThread({ ...thread, id: nextId, title: (thread.title || '') + '（已切到新线程）' })
-            }
-            setApproval(value && value.status === 'approval_required' ? { summary: value.approval || value.reply || '' } : null)
-            reloadHistory(nextId)
-          })
+        setHistory(rows => [...(rows || []), { role: 'user', text: prompt }])
+        sendStream(prompt)
+          .then(() => { setDraft('') })
           .catch(err => setError(String(err && err.message ? err.message : err)))
           .finally(() => setSending(false))
       }
@@ -167,7 +187,7 @@ window.__ModuleLoader__.load({
           h('button', { type: 'button', style: { ...row, background: 'rgba(127,127,127,0.14)' }, onClick: () => { setThread({ id: '', title: '新对话', writable: true }); setHistory([]) } }, '＋ 新对话'),
           (threads || []).map(item => h('button', { key: item.id, type: 'button', style: row, onClick: () => openThread(item) },
             h('div', { style: { fontWeight: 500 } }, item.title || '(无标题)'),
-            h('div', { style: muted }, (item.writable ? '' : '只读 · ') + (item.updatedAt || item.id)))))
+            h('div', { style: muted }, '' + (item.updatedAt || item.id)))))
       }
 
       return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
@@ -178,7 +198,6 @@ window.__ModuleLoader__.load({
         (history || []).map((message, index) => h('div', { key: index, style: bubble },
           h('div', { style: { ...muted, marginBottom: 4 } }, message.role),
           h('div', { style: { whiteSpace: 'pre-wrap' } }, message.text))),
-        thread.writable === false ? h('div', { style: { ...muted, marginBottom: 8 } }, '这条线程不是 MCP 创建的，只能看；发消息会新开一条线程。') : null,
         approval ? h('div', { style: { ...bubble, border: '1px solid #d9a441' } },
           h('div', { style: { fontWeight: 600, marginBottom: 6 } }, '专家在等审批'),
           h('div', { style: { ...muted, whiteSpace: 'pre-wrap', marginBottom: 8 } }, approval.summary),
