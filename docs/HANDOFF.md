@@ -39,6 +39,18 @@ backend 接口（每个源实现这 5 个方法，面板只认接口不认源）
   面板把它包一层，有层级时自己退一层并返回 true。包装标记 __octopWrapped 防重复。
 - 同批可用桥：__DSHM_BRIDGES__、__DSHM_BRIDGE_CONTRACT__、dshmBridge
 
+## 当前断点（519166e）
+- backends.js: octop(可用) + dsh(占位 available:false)
+- 面板专家页顶部有源切换条（>1 源时显示，未接入置灰）
+- 待做：dsh 源真实实现
+
+## dsh 源接入提示（下轮照着写）
+- 主机侧服务：ctx.subagent（@deepseek-ai/dsh-subagent），起子会话拿到 sessionId
+- listAgents() 返回固定一个 {id:'dsh', name:'DSH 助手'}
+- send(agentId, threadId, prompt) -> 起子 agent 跑一轮，回复文本回传；threadId 即 sessionId
+- listThreads()/history() 映射到会话列表与消息投影
+- 桥路由已按 /api/<源>/... 规划，未指定源默认 octop
+
 ## 下一步
 1. SSE 透传 approval 帧（面板审批在流式模式可用）
 2. 多源聚合：backend 接口 {listAgents,listThreads,history,send,status}；先 octop，再 codex/claude/opencode/pi；面板顶部源切换
