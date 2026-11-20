@@ -108,7 +108,13 @@ window.__ModuleLoader__.load({
         let alive = true
         setExperts(null)
         bridgeApi(source, '/experts')
-          .then(list => { if (alive) setExperts(Array.isArray(list) ? list : []) })
+          .then(list => {
+            if (!alive) return
+            setExperts(Array.isArray(list) ? list : [])
+            // 打开专家列表往往顺手完成了 Octop 登录；再拉一次源状态，避免源切换条停在
+            // 启动时那份「Octop 未登录 → 置灰」的旧快照上，切走就切不回来。
+            bridge('/sources').then(next => { if (alive) setSources(Array.isArray(next) ? next : []) }).catch(() => {})
+          })
           .catch(err => { if (alive) setError(String(err && err.message ? err.message : err)) })
         return () => { alive = false }
       }, [ctx, source])
