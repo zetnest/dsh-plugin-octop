@@ -92,11 +92,27 @@
 - 运行中的 host 若 `/status.startedAt` 早于提交时间，说明还没重启，见上面「工作纪律」
 
 ## 下一步
-1. acp 源（骨架已提交，见下）
-2. 各 CLI 源 / 清理 / GitHub 镜像
-3. **端侧进程创建是硬限制（E15）**：acp / cli 源要真能用，得先解决「宿主能 spawn 子进程」
-   或改成「VM 里跑 CLI + 桥接」。目前 acp 源只做到：探测二进制 → 没有就置灰说明原因，
-   有再尝试 spawn（错误原样回面板）。
+1. ~~acp 源~~（骨架已提交；端侧不可用，见下）
+2. 用 tarball/path 走官方安装通道分发本插件（已验证 install/remove 可用）
+3. VM 桥接调研（外部 agent 唯一可能的活路）
+4. 清理 / GitHub 镜像
+
+## 端侧限制（2026-11-21 实测，写死了很多路）
+
+- **进程创建被宿主主动拦截**：官方 `@deepseek-ai/dsh-subagent-codex` 能装、能注册
+  （`subagent_codex` 工具当场出现），但启动时 `spawn(process.execPath)` 被 DSHM 兜底拦掉：
+  `dshm-host.log/node-output.log` 里是
+  `execPath spawn 兜底：已拦截 spawn(process.execPath)（见 main.js 注释）`，工具报
+  `subagent-codex: Product subagent failure (product: Codex; stage: initialize; category: unknown)`。
+  `@openai/codex` 也只有 JS wrapper，没有 ohos-arm64 原生包。
+  ⇒ **任何「宿主 spawn CLI」的 subagent provider（codex / claude-code / 我们手写的 ACP）
+  在本机都跑不起来**；acp/cli 源保持置灰是正确状态。唯一活路是 VM 里跑 CLI + 宿主↔guest 桥接。
+- **进程内安装通道可用**：`plugin_manager install_bundle / remove_bundle` 走
+  `dshm-profile-pnpm` 的端侧安装队列，pnpm 能从 npmjs 拉包（实测装了
+  `@deepseek-ai/dsh-subagent-codex` 共 6 个包，含 `@openai/codex`，随后已卸载）。
+  install spec 支持 registry / `path`（本地目录）/ `.tgz`（`install-spec.ts`）。
+  ⇒ 以后可以用「本地 tgz + install_bundle」给我们自己的插件做正式安装/升级，
+  不必再手工 cp 进 `profile/node_modules`。
 
 ## ACP 源现状（`lib/acp.js`，2026-11-21）
 - 核心 `@deepseek-ai/dsh-acp` 是 **ACP server**（DSH 当 agent），不是客户端；

@@ -80,7 +80,7 @@ dsh-plugin-octop/
 |---|---|---|---|
 | `octop` | 远端 Octop 专家（REST + MCP 网关） | Octop thread_id | ✅ 真机验证 |
 | `dsh` | 本进程 subagent（`ctx.subagents`，provider=spawn） | continuable 子会话的 Session id | 代码完成，待重启验证 |
-| `acp` | 外部 ACP agent（Claude Code / Gemini CLI / Qwen Code） | ACP sessionId | 骨架完成，未真机验证（端侧无二进制 + spawn 受限） |
+| `acp` | 外部 ACP agent（Claude Code / Gemini CLI / Qwen Code） | ACP sessionId | 骨架完成；**端侧不可用**（宿主拦截 spawn(process.execPath)，见 HANDOFF） |
 | `cli` | 各 CLI（codex / opencode / pi…） | — | 未开始 |
 
 dsh 源要点：
@@ -197,5 +197,8 @@ python3 scripts/octop-m0.py --base http://192.168.1.10:8088 --user admin --pass 
   `session/new` / `session/prompt` / `session/update` / `session/request_permission`。
 - 探测：在 `PATH` + `/system/bin`、`/usr/local/bin`、`/usr/bin` 里找
   `claude-code-acp`、`gemini`、`qwen`；一个都没有时源置灰并说明找过什么。
-- 限制：端侧进程创建受限（HANDOFF E15），装了 CLI 也未必能 spawn；错误会原样回给面板。
-  ACP 没有统一的历史读取接口，线程/消息只活在内存里，重启即丢。
+- 限制：端侧宿主会主动拦截 `spawn(process.execPath)`（实测官方 codex provider 也卡在这），
+  所以 acp/cli 源在手机上跑不起来；错误会原样回给面板。ACP 没有统一的历史读取接口，
+  线程/消息只活在内存里，重启即丢。
+- 分发：`plugin_manager` 的 `install_bundle` 支持本地目录和 `.tgz`（走端侧 pnpm 队列），
+  后续可把本插件打成 tgz 走这条正式安装通道。
