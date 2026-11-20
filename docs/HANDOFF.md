@@ -107,12 +107,17 @@
   `@openai/codex` 也只有 JS wrapper，没有 ohos-arm64 原生包。
   ⇒ **任何「宿主 spawn CLI」的 subagent provider（codex / claude-code / 我们手写的 ACP）
   在本机都跑不起来**；acp/cli 源保持置灰是正确状态。唯一活路是 VM 里跑 CLI + 宿主↔guest 桥接。
-- **进程内安装通道可用**：`plugin_manager install_bundle / remove_bundle` 走
+- **进程内安装通道可用，但端侧入口很窄**：`plugin_manager install_bundle` 走
   `dshm-profile-pnpm` 的端侧安装队列，pnpm 能从 npmjs 拉包（实测装了
   `@deepseek-ai/dsh-subagent-codex` 共 6 个包，含 `@openai/codex`，随后已卸载）。
-  install spec 支持 registry / `path`（本地目录）/ `.tgz`（`install-spec.ts`）。
-  ⇒ 以后可以用「本地 tgz + install_bundle」给我们自己的插件做正式安装/升级，
-  不必再手工 cp 进 `profile/node_modules`。
+  **但端侧安装器只认三种 spec**：npm 包名、GitHub 仓库/页面地址、`github:owner/repo`
+  简写；核心虽然支持本地 `path`/`.tgz`（`install-spec.ts`），端侧入口会先拒：
+  `无法识别的插件标识：…（支持 npm 包名；GitHub 仓库地址…；github: 简写）`。
+  实测本地 tgz 和自建 Forgejo 的 `http://192.168.3.80:3007/...git` 都被拒。
+  ⇒ 自建 registry 的插件目前只能「`scripts/sync-profile.py` 同步 + 重启」；
+  要真装只有两条路：发到 npm（需要 npm token）或等 GitHub 可达。
+- **脚本**：`scripts/pack-tgz.py`（打 npm 风格 tgz）、`scripts/sync-profile.py`
+  （同步 lib + 面板到 profile，带哈希校验，`--check` 只校验）。
 
 ## ACP 源现状（`lib/acp.js`，2026-11-21）
 - 核心 `@deepseek-ai/dsh-acp` 是 **ACP server**（DSH 当 agent），不是客户端；
