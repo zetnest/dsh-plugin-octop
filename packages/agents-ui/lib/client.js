@@ -1,9 +1,8 @@
 /**
- * 侧边栏 Agents 面板：专家 → 线程 → 消息。
+ * 侧边栏 Agents 面板：源 → 专家 → 线程 → 消息。
  *
- * 数据走 host 的 Remote 命名空间 `ctx.remote.octop.*`。
- * 拿 remote 服务这里做**重试**：客户端首次渲染时服务可能还没就绪，
- * 直接报「不可用」会掩盖真实原因。
+ * 数据走本机 HTTP 桥（127.0.0.1:8791）。桥按源分路由 /api/<源>/…，
+ * 面板只认 backend 的 5 个方法，不认具体源（octop / dsh / 以后的 acp、cli）。
  */
 
 window.__ModuleLoader__.load({
@@ -23,42 +22,25 @@ window.__ModuleLoader__.load({
       return h('span', { 'aria-hidden': true, style: { fontSize: Math.min(size, 18), lineHeight: 1 } }, '🐙')
     }
 
-    /** 取 remote.octop 命名空间；最多重试 20 次（约 5s），区分「服务缺失」和「命名空间缺失」。 */
     const BRIDGE = 'http://127.0.0.1:8791'
     const BRIDGE_TOKEN = 'octop-bridge-7f3a9c'
     function bridge(path) {
       return fetch(BRIDGE + path, { headers: { authorization: 'Bearer ' + BRIDGE_TOKEN } })
         .then(response => response.ok ? response.json() : response.text().then(text => { throw new Error('桥返回 ' + response.status + ': ' + text.slice(0, 160)) }))
     }
-    function resolveNamespace(ctx) {
-      const attempt = remaining => new Promise((resolve, reject) => {
-        let remote = null
-        try { remote = ctx && typeof ctx.get === 'function' ? ctx.get('remote') : null } catch (error) { remote = null }
-        if (remote && remote.octop) return resolve(remote.octop)
-        if (remaining <= 0) {
-          return reject(new Error(remote
-            ? 'remote 服务在，但没有 octop 命名空间（host 侧 typertRemote 绑定没被网关发现）'
-            : 'remote 服务本身没就绪（@deepseek-ai/dsh-api-remotes 未加载）'))
-        }
-        window.setTimeout(() => { attempt(remaining - 1).then(resolve, reject) }, 250)
-      })
-      return attempt(20)
-    }
-
-    /** 统一 remote 调用：兼容 {ok,value} 包装，其余原样返回。 */
-    function callRemote(ns, method, args) {
-      const fn = ns && ns[method]
-      if (typeof fn !== 'function') return Promise.reject(new Error(`remote octop.${method} 不存在`))
-      return Promise.resolve(fn.apply(ns, args || [])).then(result => {
-        if (result && typeof result === 'object' && 'ok' in result) {
-          if (result.ok) return result.value
-          const message = result.error && result.error.message ? result.error.message : 'remote 调用失败'
-          throw new Error(message)
-        }
-        return result
+    /** 原始 Response 版的带源请求（流式/审批用）。 */
+    function fetchWithSource(sourceId, path, init) {
+      const request = { ...(init || {}), headers: { authorization: 'Bearer ' + BRIDGE_TOKEN, ...((init && init.headers) || {}) } }
+      return fetch(BRIDGE + '/api/' + encodeURIComponent(sourceId) + path, request).then(response => {
+        if (response.status !== 404) return response
+        return fetch(BRIDGE + path, request)
       })
     }
-
+    /** 带源前缀的 JSON 请求；桥还是旧版（无 /api 路由）时回落到老路径，面板不至于白屏。 */
+    function bridgeApi(sourceId, path, init) {
+      return fetchWithSource(sourceId, path, init)
+        .then(response => response.ok ? response.json() : response.text().then(text => { throw new Error('桥返回 ' + response.status + ': ' + text.slice(0, 160)) }))
+    }
     const row = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', margin: '2px 0', border: 'none', borderRadius: 8, background: 'transparent', color: 'inherit', cursor: 'pointer' }
     const muted = { opacity: 0.6, fontSize: 12 }
     const bubble = { padding: '10px 12px', borderRadius: 10, background: 'rgba(127,127,127,0.08)', marginBottom: 8 }
@@ -75,6 +57,7 @@ window.__ModuleLoader__.load({
       const [sending, setSending] = React.useState(false)
       const [approval, setApproval] = React.useState(null)
       const [sources, setSources] = React.useState([])
+      const [source, setSource] = React.useState('octop')
       const expertRef = React.useRef(null)
       const threadRef = React.useRef(null)
       React.useEffect(() => { expertRef.current = expert }, [expert])
@@ -123,16 +106,24 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         let alive = true
-        bridge('/experts')
+        setExperts(null)
+        bridgeApi(source, '/experts')
           .then(list => { if (alive) setExperts(Array.isArray(list) ? list : []) })
           .catch(err => { if (alive) setError(String(err && err.message ? err.message : err)) })
         return () => { alive = false }
-      }, [ctx])
+      }, [ctx, source])
+
+      function switchSource(nextId) {
+        if (nextId === source) return
+        setSource(nextId)
+        setExpert(null); setThreads(null); setThread(null); setHistory(null)
+        setApproval(null); setError(''); setDraft('')
+      }
 
       function openExpert(next) {
         try { window.history.pushState({ octop: 'threads' }, '') } catch (error) { /* 忽略 */ }
         setExpert(next); setThreads(null); setThread(null); setHistory(null); setError('')
-        bridge('/threads?agent=' + encodeURIComponent(next.id))
+        bridgeApi(source, '/threads?agent=' + encodeURIComponent(next.id))
           .then(list => setThreads(Array.isArray(list) ? list : []))
           .catch(err => setError(String(err && err.message ? err.message : err)))
       }
@@ -140,23 +131,23 @@ window.__ModuleLoader__.load({
       function openThread(next) {
         try { window.history.pushState({ octop: 'messages' }, '') } catch (error) { /* 忽略 */ }
         setThread(next); setHistory(null); setError('')
-        bridge('/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(next.id))
+        bridgeApi(source, '/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(next.id))
           .then(list => setHistory(Array.isArray(list) ? list : []))
           .catch(err => setError(String(err && err.message ? err.message : err)))
       }
 
       function reloadHistory(threadId) {
-        bridge('/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(threadId))
+        bridgeApi(source, '/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(threadId))
           .then(list => setHistory(Array.isArray(list) ? list : []))
           .catch(err => setError(String(err && err.message ? err.message : err)))
       }
 
       function sendStream(prompt) {
         const target = thread.id || ''
-        return fetch(BRIDGE + '/chat-stream', {
+        return fetchWithSource(source, '/chat-stream', {
           method: 'POST',
-          headers: { authorization: 'Bearer ' + BRIDGE_TOKEN, 'content-type': 'application/json' },
-          body: JSON.stringify({ agent: expert.id, thread: target, prompt }),
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent: expert.id, thread: target, prompt, source }),
         }).then(response => {
           if (!response.ok) throw new Error('桥返回 ' + response.status)
           const reader = response.body.getReader()
@@ -197,10 +188,10 @@ window.__ModuleLoader__.load({
       function decide(decision) {
         if (sending) return
         setSending(true)
-        fetch(BRIDGE + '/approve', {
+        fetchWithSource(source, '/approve', {
           method: 'POST',
-          headers: { authorization: 'Bearer ' + BRIDGE_TOKEN, 'content-type': 'application/json' },
-          body: JSON.stringify({ agent: expert.id, thread: thread.id, decision }),
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent: expert.id, thread: thread.id, decision, source }),
         }).then(response => response.ok ? response.json() : response.text().then(text => { throw new Error('桥返回 ' + response.status + ': ' + text.slice(0, 200)) }))
           .then(() => { setApproval(null); reloadHistory(thread.id) })
           .catch(err => setError(String(err && err.message ? err.message : err)))
@@ -212,17 +203,35 @@ window.__ModuleLoader__.load({
       if (error) {
         return h('div', { style: { padding: 24 } },
           h('h2', { style: { margin: '0 0 8px', fontSize: 18 } }, PANEL_TITLE),
-          h('p', { style: { color: '#d9534f', whiteSpace: 'pre-wrap' } }, error))
+          h('p', { style: { color: '#d9534f', whiteSpace: 'pre-wrap' } }, error),
+          h('button', {
+            type: 'button',
+            style: { ...row, width: 'auto', padding: '6px 12px', background: 'rgba(127,127,127,0.18)' },
+            onClick: () => { setError(''); setExpert(null); setThread(null); setHistory(null); setThreads(null) },
+          }, '返回源列表'))
       }
 
       if (!expert) {
         return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
           h('h2', { style: { margin: '0 0 12px', fontSize: 18, fontWeight: 600 } }, PANEL_TITLE),
           sources.length > 1 ? h('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
-            sources.map((source, index) => h('span', {
-              key: source.id,
-              style: { ...muted, padding: '4px 10px', borderRadius: 999, border: '1px solid rgba(127,127,127,0.3)', opacity: source.available === false ? 0.45 : (index === 0 ? 1 : 0.7) },
-            }, source.label + (source.available === false ? '（未接入）' : '')))) : null,
+            sources.map(item => h('button', {
+              key: item.id,
+              type: 'button',
+              disabled: item.available === false,
+              onClick: () => switchSource(item.id),
+              title: item.detail || '',
+              style: {
+                ...muted,
+                padding: '4px 10px',
+                borderRadius: 999,
+                cursor: item.available === false ? 'default' : 'pointer',
+                border: item.id === source ? '1px solid rgba(127,127,127,0.75)' : '1px solid rgba(127,127,127,0.3)',
+                background: item.id === source ? 'rgba(127,127,127,0.14)' : 'transparent',
+                color: 'inherit',
+                opacity: item.available === false ? 0.4 : (item.id === source ? 1 : 0.7),
+              },
+            }, item.label + (item.available === false ? '（未接入）' : '')))) : null,
           experts === null ? h('p', { style: muted }, '加载专家…') : null,
           experts !== null && experts.length === 0 ? h('p', { style: muted }, '没有可调用的专家') : null,
           (experts || []).map(item => h('button', { key: item.id, type: 'button', style: row, onClick: () => openExpert(item) },
@@ -251,7 +260,7 @@ window.__ModuleLoader__.load({
         (history || []).map((message, index) => h('div', { key: index, style: bubble },
           h('div', { style: { ...muted, marginBottom: 4 } }, message.role),
           h('div', { style: { whiteSpace: 'pre-wrap' } }, message.text))),
-        approval ? h('div', { style: { ...bubble, border: '1px solid #d9a441' } },
+        approval && source === 'octop' ? h('div', { style: { ...bubble, border: '1px solid #d9a441' } },
           h('div', { style: { fontWeight: 600, marginBottom: 6 } }, '专家在等审批'),
           h('div', { style: { ...muted, whiteSpace: 'pre-wrap', marginBottom: 8 } }, approval.summary),
           h('div', { style: { display: 'flex', gap: 8 } },
@@ -260,7 +269,7 @@ window.__ModuleLoader__.load({
         h('div', { style: { display: 'flex', gap: 8, marginTop: 12 } },
           h('textarea', {
             value: draft,
-            placeholder: '给这个专家发消息…',
+            placeholder: source === 'dsh' ? '给这个 DSH 子 agent 发消息…' : '给这个专家发消息…',
             rows: 2,
             style: { flex: 1, resize: 'vertical', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.35)', background: 'transparent', color: 'inherit', font: 'inherit' },
             onChange: event => setDraft(event.target.value),

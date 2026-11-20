@@ -12,6 +12,7 @@
 | Octop 侧接口契约 | ✅ **已实测通过**（Octop `1.0.3b7` @ `http://192.168.3.80:8088`，2026-11-20） |
 | 插件代码（6 个工具 + 自动登录续期） | ✅ **已装机验证**（DSHM 端侧，bundle 方式挂载，6 个工具全部跑通） |
 | 安装通道 | 端侧安装器只认 npm 包名 / github.com；Forgejo 的 npm registry 包已发布，但安装器不读自定义 registry（3 处 `installer.json` 实测无效），当前为本地 bundle 挂载 |
+| 多源骨架 | Octop（已验证）+ DSH（本进程 subagent，代码完成，**待重启验证**）；桥按 `/api/<源>/…` 分源 |
 | GitHub 镜像 | ⚠️ Forgejo → GitHub 推送被 TLS 重置（跨境网络），待代理/SSH:443 解决 |
 
 ### 真机验证记录（2026-11-20）
@@ -56,15 +57,42 @@
 ```
 dsh-plugin-octop/
 ├── lib/
-│   ├── index.js    # cordis 插件入口：收敛配置、注册工具
+│   ├── index.js    # cordis 插件入口：收敛配置、注册工具、起本机 HTTP 桥
 │   ├── client.js   # REST 客户端：登录换 JWT、令牌缓存/提前续期、401 重登、超时
 │   ├── mcp.js      # Octop Agent MCP 网关最小客户端（initialize / tools/list / tools/call）
-│   └── tools.js    # 6 个模型可见工具的定义与投影
+│   ├── tools.js    # 6 个模型可见工具的定义与投影
+│   ├── backends.js # 多源注册表：octop + dsh（本进程 subagent）
+│   ├── bridge.js   # 127.0.0.1:8791 的 HTTP/SSE 桥，路由 /api/<源>/…
+│   └── ws.js       # Octop 对话 WebSocket 通道（非 MCP 线程续聊）
 ├── scripts/
 │   └── octop-m0.py # M0 冒烟：不装插件也能验证 Octop 网络/账号/接口形状
+├── packages/agents-ui/    # 侧边栏面板（客户端插件：源切换 / 专家 / 线程 / 消息 / 流式）
 └── examples/
     └── cordis-entry.yml
 ```
+
+## 多源（backend 接口）
+
+每个源实现 5 个方法：`status / listAgents / listThreads / history / send`；桥和面板只认接口。
+
+| 源 | 形态 | 线程 = | 状态 |
+|---|---|---|---|
+| `octop` | 远端 Octop 专家（REST + MCP 网关） | Octop thread_id | ✅ 真机验证 |
+| `dsh` | 本进程 subagent（`ctx.subagents`，provider=spawn） | continuable 子会话的 Session id | 代码完成，待重启验证 |
+| `acp` / `cli` | Agent Client Protocol / 各 CLI | — | 未开始 |
+
+dsh 源要点：
+
+- 父会话 = 面板传的 `session`，没传就取**最近创建的活会话**（`ctx.agents.list()` 里 `origin !== 'subagent'` 的那个）。
+- 新对话 = `ctx.subagents.startActivation({ provider:'spawn', delivery:'caller', label:'DSH 助手' })`，
+  返回的 `childId` 就是 threadId；子会话进父会话的 subagent catalog，但不打扰父会话的模型。
+- 续聊 = `ctx.subagents.sendMessage(parent, threadId, …)`；子会话被回收时 manager 自动冷恢复。
+- 流式 = 订阅 `agent/assistant-stream` 的 `chunk`（`text-delta`），按子 agent id 过滤后透传 SSE。
+- 线程列表 = `ctx.subagents.listDescendants(session)` 里 `mode=continuable && label='DSH 助手'` 的条目；
+  标题 = `ctx.sessionQuery.readTitleSnapshots([...])`；历史 = `observeSession(threadId).events` 投影。
+
+桥路由：`GET /api/<源>/experts|threads|history|status`、`POST /api/<源>/chat|chat-stream|approve`；
+旧路径 `/experts`、`/chat-stream` 等继续可用（默认 octop）。`GET /sources` 列出所有源。
 
 ## 工具
 
