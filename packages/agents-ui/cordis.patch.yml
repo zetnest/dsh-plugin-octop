@@ -1,0 +1,7 @@
+# dsh-plugin-agents-ui —— bundle 层 patch
+#
+# host 侧只注册一个空插件（客户端模块由 dsh.client 声明，浏览器侧加载），
+# 所以这里只需要把入口插进 profile 的入口树。
+- insert:
+    - id: agents-ui
+      name: '@seven/dsh-plugin-agents-ui'
