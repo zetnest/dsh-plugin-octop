@@ -1,0 +1,15 @@
+# dsh-plugin-octop —— bundle 层 patch。
+#
+# 安装器只自动登记带 dsh.bundle 的包；这个 patch 把插件行插进 profile 的入口树，
+# 启动时随 profile 挂载。config 是「出厂默认」：空的账号密码，装上后到
+# 设置 → 插件 里改成你自己的 Octop 账号（或加一层 profile patch 覆盖，按 id 覆盖整块）。
+- insert:
+    - id: octop
+      name: '@seven/dsh-plugin-octop'
+      config:
+        baseUrl: 'http://127.0.0.1:8088'
+        username: ''
+        password: ''
+        defaultExpert: ''
+        timeoutMs: 60000
+        chatTimeoutMs: 900000
