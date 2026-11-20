@@ -37,6 +37,14 @@ window.__ModuleLoader__.load({
       })
     }
     /** 带源前缀的 JSON 请求；桥还是旧版（无 /api 路由）时回落到老路径，面板不至于白屏。 */
+    /** JSON POST（线程管理等写操作）。 */
+    function postJson(sourceId, path, body) {
+      return bridgeApi(sourceId, path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      })
+    }
     function bridgeApi(sourceId, path, init) {
       return fetchWithSource(sourceId, path, init)
         .then(response => response.ok ? response.json() : response.text().then(text => { throw new Error('桥返回 ' + response.status + ': ' + text.slice(0, 160)) }))
@@ -76,6 +84,7 @@ window.__ModuleLoader__.load({
 
     const row = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', margin: '2px 0', border: 'none', borderRadius: 8, background: 'transparent', color: 'inherit', cursor: 'pointer' }
     const muted = { opacity: 0.6, fontSize: 12 }
+    const smallBtn = { ...row, width: 'auto', padding: '4px 10px', background: 'rgba(127,127,127,0.14)', fontSize: 13 }
     const bubble = { padding: '10px 12px', borderRadius: 10, background: 'rgba(127,127,127,0.08)', marginBottom: 8 }
 
     function OctopPanel(props) {
@@ -91,6 +100,9 @@ window.__ModuleLoader__.load({
       const [approval, setApproval] = React.useState(null)
       const [sources, setSources] = React.useState([])
       const [source, setSource] = React.useState('octop')
+      const [lastPrompt, setLastPrompt] = React.useState('')
+      const [editingTitle, setEditingTitle] = React.useState(null)
+      const [confirmHide, setConfirmHide] = React.useState(false)
       const expertRef = React.useRef(null)
       const threadRef = React.useRef(null)
       React.useEffect(() => { expertRef.current = expert }, [expert])
@@ -169,7 +181,7 @@ window.__ModuleLoader__.load({
 
       function openThread(next) {
         try { window.history.pushState({ octop: 'messages' }, '') } catch (error) { /* 忽略 */ }
-        setThread(next); setHistory(null); setError('')
+        setThread(next); setHistory(null); setError(''); setEditingTitle(null); setConfirmHide(false)
         bridgeApi(source, withSession('/history?agent=' + encodeURIComponent(expert.id) + '&thread=' + encodeURIComponent(next.id), mainSessionId(ctx)))
           .then(list => setHistory(Array.isArray(list) ? list : []))
           .catch(err => setError(String(err && err.message ? err.message : err)))
@@ -229,15 +241,45 @@ window.__ModuleLoader__.load({
         })
       }
 
-      function send() {
-        const prompt = draft.trim()
+      function send(promptArg, isRetry) {
+        const prompt = String(promptArg !== undefined ? promptArg : draft).trim()
         if (!prompt || sending) return
-        setSending(true); setError('')
-        setHistory(rows => [...(rows || []), { role: 'user', text: prompt }])
+        setSending(true); setError(''); setLastPrompt(prompt)
+        setHistory(rows => {
+          const list = rows || []
+          if (!isRetry) return [...list, { role: 'user', text: prompt }]
+          // 重试：上一轮可能留下半截流式气泡，先把末尾的 live 气泡去掉
+          const trimmed = list.filter((row, index) => !(index === list.length - 1 && row && row.__live && row.role === 'assistant'))
+          return trimmed
+        })
         sendStream(prompt)
           .then(() => { setDraft('') })
           .catch(err => setError(String(err && err.message ? err.message : err)))
           .finally(() => setSending(false))
+      }
+
+      function refreshThreads() {
+        if (!expert) return
+        bridgeApi(source, withSession('/threads?agent=' + encodeURIComponent(expert.id), mainSessionId(ctx)))
+          .then(list => setThreads(Array.isArray(list) ? list : []))
+          .catch(() => {})
+      }
+
+      function saveTitle() {
+        if (!thread || !thread.id) return
+        const title = String(editingTitle || '').trim()
+        if (!title) { setEditingTitle(null); return }
+        postJson(source, '/thread-meta', { thread: thread.id, title })
+          .then(() => { setThread(current => (current ? { ...current, title } : current)); setEditingTitle(null); refreshThreads() })
+          .catch(err => setError(String(err && err.message ? err.message : err)))
+      }
+
+      function hideThread() {
+        if (!thread || !thread.id) return
+        if (!confirmHide) { setConfirmHide(true); return }
+        postJson(source, '/thread-meta', { thread: thread.id, hidden: true })
+          .then(() => { setThread(null); setHistory(null); setApproval(null); setConfirmHide(false); refreshThreads() })
+          .catch(err => setError(String(err && err.message ? err.message : err)))
       }
 
       function decide(decision) {
@@ -259,6 +301,13 @@ window.__ModuleLoader__.load({
         return h('div', { style: { padding: 24 } },
           h('h2', { style: { margin: '0 0 8px', fontSize: 18 } }, PANEL_TITLE),
           h('p', { style: { color: '#d9534f', whiteSpace: 'pre-wrap' } }, error),
+          lastPrompt
+            ? h('button', {
+              type: 'button',
+              style: { ...row, width: 'auto', padding: '6px 12px', background: 'rgba(127,127,127,0.18)' },
+              onClick: () => { setError(''); send(lastPrompt, true) },
+            }, '重试上一条')
+            : null,
           h('button', {
             type: 'button',
             style: { ...row, width: 'auto', padding: '6px 12px', background: 'rgba(127,127,127,0.18)' },
@@ -301,16 +350,30 @@ window.__ModuleLoader__.load({
             h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 600 } }, expert.name)),
           threads === null ? h('p', { style: muted }, '加载线程…') : null,
           threads !== null && threads.length === 0 ? h('p', { style: muted }, '这个专家还没有线程') : null,
-          h('button', { type: 'button', style: { ...row, background: 'rgba(127,127,127,0.14)' }, onClick: () => { setThread({ id: '', title: '新对话', writable: true }); setHistory([]) } }, '＋ 新对话'),
+          h('button', { type: 'button', style: { ...row, background: 'rgba(127,127,127,0.14)' }, onClick: () => { setThread({ id: '', title: '新对话', writable: true }); setHistory([]); setEditingTitle(null); setConfirmHide(false) } }, '＋ 新对话'),
           (threads || []).map(item => h('button', { key: item.id, type: 'button', style: row, onClick: () => openThread(item) },
             h('div', { style: { fontWeight: 500 } }, item.title || '(无标题)'),
             h('div', { style: muted }, '' + (item.updatedAt || item.id)))))
       }
 
+      const canManage = Boolean(thread && thread.id)
       return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' } },
           back(() => window.history.back()),
-          h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 600 } }, thread.title || thread.id)),
+          editingTitle === null
+            ? h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, thread.title || thread.id)
+            : h('input', {
+              value: editingTitle,
+              style: { flex: 1, minWidth: 120, padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.35)', background: 'transparent', color: 'inherit', font: 'inherit' },
+              onChange: event => setEditingTitle(event.target.value),
+              onKeyDown: event => {
+                if (event.key === 'Enter') saveTitle()
+                if (event.key === 'Escape') setEditingTitle(null)
+              },
+            }),
+          canManage && editingTitle === null ? h('button', { type: 'button', style: smallBtn, onClick: () => { setEditingTitle(thread.title || ''); setConfirmHide(false) } }, '改名') : null,
+          canManage && editingTitle !== null ? h('button', { type: 'button', style: smallBtn, onClick: saveTitle }, '保存') : null,
+          canManage ? h('button', { type: 'button', style: { ...smallBtn, color: confirmHide ? '#d9534f' : 'inherit' }, onClick: hideThread }, confirmHide ? '确认隐藏？' : '隐藏') : null),
         history === null ? h('p', { style: muted }, '加载历史…') : null,
         (history || []).map((message, index) => h('div', { key: index, style: bubble },
           h('div', { style: { ...muted, marginBottom: 4 } }, message.role),

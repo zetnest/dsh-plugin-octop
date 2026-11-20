@@ -83,6 +83,15 @@
 4. 切回 Octop：老的专家/线程/历史/流式/审批不回归（专家列表 ✅；流式/审批待肉眼确认）
 5. 新建第二条 DSH 对话，两条线程都出现在线程列表 ✅
 
+## 面板线程管理（2026-11-21）
+
+- `POST /api/dsh/thread-meta`：`{thread, title?|hidden?}`，只写本地展示层元数据
+  （`$DSH_HOME/plugin-data/octop-thread-meta.json`），**不动子会话本身**；rename 覆盖标题、
+  hidden 从列表隐藏（会话仍可在 DSH 会话列表里找回）。
+- 面板线程页头部：改名（内联输入 + 保存）/ 隐藏（两段确认：隐藏 → 确认隐藏？）。
+- 发送失败时错误页出现「重试上一条」，重发同一条 prompt 并去掉上一轮残留的流式气泡。
+- 未做：停止正在跑的一轮（可以接 `subagents.interrupt`，面板加按钮即可，下轮再说）。
+
 ## 参考资料
 - `docs/dsh-subagent-api-notes.md`：并行会话留下的源码级 API 笔记（含本仓库的实测校正），
   写 dsh 源前值得先扫一遍。
