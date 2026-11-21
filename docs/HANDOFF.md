@@ -108,7 +108,7 @@
   取消后这一轮以 `aborted` 收尾。**已验证（08:4x 重启，startedAt 00:35:56Z）**：
   发出一轮慢请求（让子 agent 跑 bash sleep），3 秒后 `POST /api/dsh/cancel` →
   SSE 收到 `{threadId}` → `{chunk:"（这一轮以 aborted 结束）"}` → `{done,status:"aborted"}`，
-  历史只剩用户那条；测试线程已隐藏。
+  历史只剩用户那条；测试线程已隐藏。文案已改成「（已停止）」，09:0x 重启后复测确认。
 - 停止后的空白提示已改成「（已停止）」；面板每轮结束会刷新线程列表（新对话不用回退就能看到）。
 - 复查用：`GET /api/dsh/threads?agent=dsh&session=<会话id>`。
 
@@ -159,13 +159,15 @@
 - 未验证项：真实 ACP agent 握手、流式 update、权限请求；端侧没有二进制，只能到「置灰 + 说明」为止。
 - 线程与消息只在内存（ACP 无历史接口），重启即丢；上限 50 条。
 2. 各 CLI 源（codex / opencode / pi），按实际使用逐个补
-3. ~~清理 profile 里 typert 方案拷的依赖~~（2026-11-21 已做，待重启验证）：两个插件只有相对导入和
+3. ~~清理 profile 里 typert 方案拷的依赖~~（**2026-11-21 09:0x 重启验证通过**）：两个插件只有相对导入和
    node 内置模块，零裸导入；9 个重复包（cordis/cosmokit/dsh-brand/dsh-typert-protocol/
    schemastery/dsh-sdk-protocol/dsh-tool-subagent/@standard-schema/spec/zod，约 12.7MB）
    已移入 `$DSH_HOME/profile-dep-backup-084853/`（目录里有 RESTORE.sh），
    其中 @standard-schema/spec 和 zod 直接删（core 里有同版本）。
    **回滚**：以 root 跑 `sh $DSH_HOME/profile-dep-backup-084853/RESTORE.sh` 再重启。
    注意 virtfs 的目录缓存会短时骗人（`ls` 还能看到、`mv` 报 ENOENT）——以宿主机进程看到的为准。
+   启动验证：`startedAt 00:57:32Z`，三个源正常、Octop 6 个专家、dsh 线程列表正常；
+   验证通过后备份目录已删（回收 4.5MB，另 8.2MB 的 zod 之前直接删掉了）。
 4. 改名清单见 `docs/RENAME.md`（项目名里带 Octop，GitHub 镜像/发布等定名后再做）
 4. GitHub 镜像待代理或 ssh://git@ssh.github.com:443
 
