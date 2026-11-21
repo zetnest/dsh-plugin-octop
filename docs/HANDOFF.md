@@ -96,12 +96,16 @@
 
 ## 面板线程管理（2026-11-21）
 
+- SSE 帧新增 `{threadId}`（新对话刚建好子会话就发），`done` 帧仍带 threadId（旧桥兼容）。
+
 - `POST /api/dsh/thread-meta`：`{thread, title?|hidden?}`，只写本地展示层元数据
   （`$DSH_HOME/plugin-data/octop-thread-meta.json`），**不动子会话本身**；rename 覆盖标题、
   hidden 从列表隐藏（会话仍可在 DSH 会话列表里找回）。
 - 面板线程页头部：改名（内联输入 + 保存）/ 隐藏（两段确认：隐藏 → 确认隐藏？）。
 - 发送失败时错误页出现「重试上一条」，重发同一条 prompt 并去掉上一轮残留的流式气泡。
-- 未做：停止正在跑的一轮（可以接 `subagents.interrupt`，面板加按钮即可，下轮再说）。
+- **停止正在跑的一轮**：`POST /api/dsh/cancel {thread}` → `subagents.interrupt(id, {kind:'user'})`；
+  流式里新对话一建好就推 `{threadId}` 帧（`onThread`），面板据此把「发送」换成「停止」。
+  取消后这一轮以 `aborted` 收尾。**待重启验证**（2026-11-21 08:3x 的运行时还没有这条路由）。
 - 复查用：`GET /api/dsh/threads?agent=dsh&session=<会话id>`。
 
 ## 参考资料

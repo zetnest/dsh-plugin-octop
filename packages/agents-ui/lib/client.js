@@ -103,6 +103,7 @@ window.__ModuleLoader__.load({
       const [lastPrompt, setLastPrompt] = React.useState('')
       const [editingTitle, setEditingTitle] = React.useState(null)
       const [confirmHide, setConfirmHide] = React.useState(false)
+      const [activeThreadId, setActiveThreadId] = React.useState('')
       const expertRef = React.useRef(null)
       const threadRef = React.useRef(null)
       React.useEffect(() => { expertRef.current = expert }, [expert])
@@ -229,7 +230,13 @@ window.__ModuleLoader__.load({
               }
               if (frame.approval) setApproval({ summary: frame.approval })
               if (frame.error) setError(frame.error)
-              // 新对话的第一轮结束后把新线程 id 接上，否则第二条消息会再开一条新线程
+              // 新对话：子会话一建立（threadId 帧）就把 id 接上，停止按钮才能定位到它；
+              // done 帧再兜一次，兼容旧桥。
+              if (frame.threadId) {
+                const created = String(frame.threadId)
+                setActiveThreadId(current => current || created)
+                setThread(current => (current && !current.id ? { ...current, id: created, title: current.title || '新对话' } : current))
+              }
               if (frame.done && frame.threadId) {
                 const created = String(frame.threadId)
                 setThread(current => (current && !current.id ? { ...current, id: created, title: current.title || '新对话' } : current))
@@ -244,7 +251,7 @@ window.__ModuleLoader__.load({
       function send(promptArg, isRetry) {
         const prompt = String(promptArg !== undefined ? promptArg : draft).trim()
         if (!prompt || sending) return
-        setSending(true); setError(''); setLastPrompt(prompt)
+        setSending(true); setError(''); setLastPrompt(prompt); setActiveThreadId(thread && thread.id ? String(thread.id) : '')
         setHistory(rows => {
           const list = rows || []
           if (!isRetry) return [...list, { role: 'user', text: prompt }]
@@ -256,6 +263,13 @@ window.__ModuleLoader__.load({
           .then(() => { setDraft('') })
           .catch(err => setError(String(err && err.message ? err.message : err)))
           .finally(() => setSending(false))
+      }
+
+      function stop() {
+        const id = activeThreadId || (thread && thread.id) || ''
+        if (!id) return
+        postJson(source, '/cancel', { thread: id })
+          .catch(err => setError(String(err && err.message ? err.message : err)))
       }
 
       function refreshThreads() {
@@ -392,12 +406,18 @@ window.__ModuleLoader__.load({
             style: { flex: 1, resize: 'vertical', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.35)', background: 'transparent', color: 'inherit', font: 'inherit' },
             onChange: event => setDraft(event.target.value),
           }),
-          h('button', {
-            type: 'button',
-            disabled: sending || draft.trim() === '',
-            style: { ...row, width: 'auto', padding: '8px 14px', background: 'rgba(127,127,127,0.18)', opacity: sending || draft.trim() === '' ? 0.5 : 1 },
-            onClick: send,
-          }, sending ? '发送中…' : '发送')))
+          sending
+            ? h('button', {
+              type: 'button',
+              style: { ...row, width: 'auto', padding: '8px 14px', background: 'rgba(217,83,79,0.18)' },
+              onClick: stop,
+            }, '停止')
+            : h('button', {
+              type: 'button',
+              disabled: draft.trim() === '',
+              style: { ...row, width: 'auto', padding: '8px 14px', background: 'rgba(127,127,127,0.18)', opacity: draft.trim() === '' ? 0.5 : 1 },
+              onClick: () => send(),
+            }, '发送')))
     }
 
     function apply(ctx) {
