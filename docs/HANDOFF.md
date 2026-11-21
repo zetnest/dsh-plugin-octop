@@ -105,7 +105,11 @@
 - 发送失败时错误页出现「重试上一条」，重发同一条 prompt 并去掉上一轮残留的流式气泡。
 - **停止正在跑的一轮**：`POST /api/dsh/cancel {thread}` → `subagents.interrupt(id, {kind:'user'})`；
   流式里新对话一建好就推 `{threadId}` 帧（`onThread`），面板据此把「发送」换成「停止」。
-  取消后这一轮以 `aborted` 收尾。**待重启验证**（2026-11-21 08:3x 的运行时还没有这条路由）。
+  取消后这一轮以 `aborted` 收尾。**已验证（08:4x 重启，startedAt 00:35:56Z）**：
+  发出一轮慢请求（让子 agent 跑 bash sleep），3 秒后 `POST /api/dsh/cancel` →
+  SSE 收到 `{threadId}` → `{chunk:"（这一轮以 aborted 结束）"}` → `{done,status:"aborted"}`，
+  历史只剩用户那条；测试线程已隐藏。
+- 停止后的空白提示已改成「（已停止）」；面板每轮结束会刷新线程列表（新对话不用回退就能看到）。
 - 复查用：`GET /api/dsh/threads?agent=dsh&session=<会话id>`。
 
 ## 参考资料

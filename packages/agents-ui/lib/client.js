@@ -262,7 +262,7 @@ window.__ModuleLoader__.load({
         sendStream(prompt)
           .then(() => { setDraft('') })
           .catch(err => setError(String(err && err.message ? err.message : err)))
-          .finally(() => setSending(false))
+          .finally(() => { setSending(false); refreshThreads() })
       }
 
       function stop() {
