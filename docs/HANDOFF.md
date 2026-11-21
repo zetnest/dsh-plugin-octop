@@ -159,8 +159,14 @@
 - 未验证项：真实 ACP agent 握手、流式 update、权限请求；端侧没有二进制，只能到「置灰 + 说明」为止。
 - 线程与消息只在内存（ACP 无历史接口），重启即丢；上限 50 条。
 2. 各 CLI 源（codex / opencode / pi），按实际使用逐个补
-3. 清理：profile 里 typert 方案拷的 6 个依赖（cordis/cosmokit/dsh-typert-protocol/dsh-brand/
-   @standard-schema/spec/zod）——**删前先确认没有别的插件从 profile 根解析它们**
+3. ~~清理 profile 里 typert 方案拷的依赖~~（2026-11-21 已做，待重启验证）：两个插件只有相对导入和
+   node 内置模块，零裸导入；9 个重复包（cordis/cosmokit/dsh-brand/dsh-typert-protocol/
+   schemastery/dsh-sdk-protocol/dsh-tool-subagent/@standard-schema/spec/zod，约 12.7MB）
+   已移入 `$DSH_HOME/profile-dep-backup-084853/`（目录里有 RESTORE.sh），
+   其中 @standard-schema/spec 和 zod 直接删（core 里有同版本）。
+   **回滚**：以 root 跑 `sh $DSH_HOME/profile-dep-backup-084853/RESTORE.sh` 再重启。
+   注意 virtfs 的目录缓存会短时骗人（`ls` 还能看到、`mv` 报 ENOENT）——以宿主机进程看到的为准。
+4. 改名清单见 `docs/RENAME.md`（项目名里带 Octop，GitHub 镜像/发布等定名后再做）
 4. GitHub 镜像待代理或 ssh://git@ssh.github.com:443
 
 ## 工作纪律
