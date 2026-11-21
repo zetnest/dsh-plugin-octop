@@ -16,6 +16,8 @@ window.__ModuleLoader__.load({
     const h = React.createElement
     const PANEL_ID = `octop`
     const PANEL_TITLE = `Octop`
+    /** 应用中心面板的 main 槽位 key。 */
+    const APPS_PANEL_ID = 'apps'
 
     /**
      * 侧栏图标：用 currentColor 的内联 SVG，跟随主题着色（emoji 在深浅色下都不受控）。
@@ -131,6 +133,110 @@ window.__ModuleLoader__.load({
         ].join('\n')
         document.head.appendChild(style)
       } catch (error) { /* 无 DOM 环境忽略 */ }
+    }
+
+    /** 应用中心图标：四个圆角方块（应用抽屉）。 */
+    function AppsIcon(props) {
+      const size = props && typeof props.size === 'number' ? props.size : 16
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 16 16', fill: 'none',
+        'aria-hidden': true, focusable: false, style: { display: 'block', flex: 'none' },
+      },
+      h('rect', { x: 2.2, y: 2.2, width: 5.1, height: 5.1, rx: 1.3, stroke: 'currentColor', strokeWidth: 1.2 }),
+      h('rect', { x: 8.7, y: 2.2, width: 5.1, height: 5.1, rx: 1.3, stroke: 'currentColor', strokeWidth: 1.2 }),
+      h('rect', { x: 2.2, y: 8.7, width: 5.1, height: 5.1, rx: 1.3, stroke: 'currentColor', strokeWidth: 1.2 }),
+      h('rect', { x: 8.7, y: 8.7, width: 5.1, height: 5.1, rx: 1.3, stroke: 'currentColor', strokeWidth: 1.2 }))
+    }
+
+    /** 对话图标：一个气泡。 */
+    function ChatIcon(props) {
+      const size = props && typeof props.size === 'number' ? props.size : 16
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 16 16', fill: 'none',
+        'aria-hidden': true, focusable: false, style: { display: 'block', flex: 'none' },
+      },
+      h('path', {
+        d: 'M2.4 4.2c0-.8.6-1.4 1.4-1.4h8.4c.8 0 1.4.6 1.4 1.4v5.2c0 .8-.6 1.4-1.4 1.4H7.2L4 13.4v-2.6H3.8c-.8 0-1.4-.6-1.4-1.4V4.2Z',
+        stroke: 'currentColor', strokeWidth: 1.2, strokeLinejoin: 'round',
+      }))
+    }
+
+    /**
+     * 应用注册表（客户端全局，零核心改动）。应用把自己登记进来，
+     * 应用中心按 order 排序渲染卡片；点击卡片走 ctx.layout.selectPanel。
+     * meta: { id, title, description?, icon?, order?, kind?: 'panel' | 'conversation', available? }
+     * id 必须等于该应用注册到 main 槽位的 key。
+     */
+    const APPS_GLOBAL = '__DSH_APPS__'
+    function appRegistry() {
+      try {
+        const current = window[APPS_GLOBAL]
+        if (current && Array.isArray(current.list) && typeof current.register === 'function') return current
+        const list = []
+        const registry = {
+          list,
+          register(meta) {
+            if (!meta || !meta.id) return
+            const index = list.findIndex(item => item.id === meta.id)
+            if (index >= 0) list[index] = { ...list[index], ...meta }
+            else list.push(meta)
+            try { window.dispatchEvent(new CustomEvent('dsh-apps-changed')) } catch (error) { /* 忽略 */ }
+          },
+        }
+        window[APPS_GLOBAL] = registry
+        return registry
+      } catch (error) {
+        return { list: [], register() {} }
+      }
+    }
+
+    /** 订阅注册表变化（注册晚于渲染也能刷出来）。 */
+    function useApps() {
+      const [apps, setApps] = React.useState(() => appRegistry().list.slice())
+      React.useEffect(() => {
+        const sync = () => setApps(appRegistry().list.slice())
+        window.addEventListener('dsh-apps-changed', sync)
+        sync()
+        return () => window.removeEventListener('dsh-apps-changed', sync)
+      }, [])
+      return apps
+    }
+
+    function AppCenter(props) {
+      const ctx = props && props.ctx ? props.ctx : null
+      const apps = useApps()
+      const sorted = apps.slice().sort((a, b) => (a.order || 100) - (b.order || 100))
+      const open = app => {
+        try {
+          const layout = ctx && typeof ctx.get === 'function' ? ctx.get('layout') : null
+          if (!layout || typeof layout.selectPanel !== 'function') return
+          layout.selectPanel(app.kind === 'conversation' ? null : app.id)
+        } catch (error) { /* 面板没注册时忽略 */ }
+      }
+      return h('div', { style: surface.root },
+        h('div', { style: surface.header },
+          h('h2', { style: { ...surface.title, fontSize: 18 } }, '应用'),
+          h('span', { style: muted }, sorted.length + ' 个')),
+        h('div', { style: surface.body },
+          h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 } },
+            sorted.map(app => h('button', {
+              key: app.id,
+              type: 'button',
+              className: 'dsh-agents-row',
+              disabled: app.available === false,
+              onClick: () => open(app),
+              style: {
+                display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
+                padding: '14px 12px', borderRadius: 'var(--dsw-radius-md)',
+                border: '1px solid var(--dsw-alias-border-l1)', background: 'var(--dsw-alias-bg-layer-1)',
+                color: 'var(--dsw-alias-label-primary)', textAlign: 'left', font: 'inherit', cursor: 'pointer',
+                opacity: app.available === false ? 0.45 : 1, minHeight: 96,
+              },
+            },
+            h('span', { style: { color: 'var(--dsw-alias-label-secondary)', display: 'inline-flex' } }, app.icon ? h(app.icon, { size: 22 }) : h(AppsIcon, { size: 22 })),
+            h('span', { style: { fontWeight: 500, fontSize: 14 } }, app.title || app.id),
+            app.description ? h('span', { style: muted }, app.description) : null))),
+          sorted.length === 0 ? h('p', { style: muted }, '还没有注册任何应用') : null))
     }
 
     function OctopPanel(props) {
@@ -479,11 +585,26 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       ensureStyles()
       const RemotePanel = () => h(OctopPanel, { ctx })
+      const AppsPanel = () => h(AppCenter, { ctx })
       ctx.slots.inject(`main`, () => ctx.slots.register({ name: `main`, key: PANEL_ID }, RemotePanel))
+      ctx.slots.inject(`main`, () => ctx.slots.register({ name: `main`, key: APPS_PANEL_ID }, AppsPanel))
       ctx.slots.inject(`sidebar.panellist`, () => ctx.slots.register(
         { name: `sidebar.panellist`, id: PANEL_ID, order: 10, label: () => PANEL_TITLE },
         PanelIcon,
       ))
+      ctx.slots.inject(`sidebar.panellist`, () => ctx.slots.register(
+        { name: `sidebar.panellist`, id: APPS_PANEL_ID, order: 5, label: () => '应用' },
+        AppsIcon,
+      ))
+      // 应用中心里把「Octop 面板」和「对话」登记成两个应用
+      appRegistry().register({
+        id: PANEL_ID, title: PANEL_TITLE, order: 10,
+        description: 'Octop / DSH / ACP 多源对话', icon: PanelIcon,
+      })
+      appRegistry().register({
+        id: 'conversation', title: '对话', order: 1, kind: 'conversation',
+        description: '回到当前会话', icon: ChatIcon,
+      })
     }
 
     exports.apply = apply
