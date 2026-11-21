@@ -83,6 +83,17 @@
 4. 切回 Octop：老的专家/线程/历史/流式/审批不回归（专家列表 ✅；流式/审批待肉眼确认）
 5. 新建第二条 DSH 对话，两条线程都出现在线程列表 ✅
 
+## 08:2x 重启后验证（startedAt 00:17:43Z，含 0e71d46）
+
+- `/sources`：octop `available:true`（懒登录已修）、dsh 正常、acp 灰且带原因
+- `thread-meta`：改名 → 列表显示新名；隐藏 → 从列表消失；取消隐藏 → 回来；
+  传空 title → 恢复会话自带标题（`plugin-data/octop-thread-meta.json` 最后是 `{}`）
+- 会话作用域：带 `session=<活会话>` 新建线程成功，`?session=` 只列该会话的子会话；
+  给个已失效的 session 会回落到全部活顶层会话（不报错）
+- codex bundle 已彻底移除：profile bundles 只剩 5 个、deps 空、
+  `node_modules/@openai` 残留已手工删；`subagent_codex` 工具不再出现
+- 测试线程 `37480eb6…` 已隐藏（面板里看不到，会话列表仍可找回）
+
 ## 面板线程管理（2026-11-21）
 
 - `POST /api/dsh/thread-meta`：`{thread, title?|hidden?}`，只写本地展示层元数据
@@ -91,6 +102,7 @@
 - 面板线程页头部：改名（内联输入 + 保存）/ 隐藏（两段确认：隐藏 → 确认隐藏？）。
 - 发送失败时错误页出现「重试上一条」，重发同一条 prompt 并去掉上一轮残留的流式气泡。
 - 未做：停止正在跑的一轮（可以接 `subagents.interrupt`，面板加按钮即可，下轮再说）。
+- 复查用：`GET /api/dsh/threads?agent=dsh&session=<会话id>`。
 
 ## 参考资料
 - `docs/dsh-subagent-api-notes.md`：并行会话留下的源码级 API 笔记（含本仓库的实测校正），
