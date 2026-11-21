@@ -17,9 +17,24 @@ window.__ModuleLoader__.load({
     const PANEL_ID = `octop`
     const PANEL_TITLE = `Octop`
 
+    /**
+     * 侧栏图标：用 currentColor 的内联 SVG，跟随主题着色（emoji 在深浅色下都不受控）。
+     * 图形是「一个节点连两个子节点」，对应「源 → 专家/线程」这层结构。
+     */
     function PanelIcon(props) {
       const size = props && typeof props.size === 'number' ? props.size : 16
-      return h('span', { 'aria-hidden': true, style: { fontSize: Math.min(size, 18), lineHeight: 1 } }, '🐙')
+      return h('svg', {
+        width: size, height: size, viewBox: '0 0 16 16', fill: 'none',
+        'aria-hidden': true, focusable: false,
+        style: { display: 'block', flex: 'none' },
+      },
+      h('circle', { cx: 8, cy: 3.6, r: 1.9, stroke: 'currentColor', strokeWidth: 1.2 }),
+      h('circle', { cx: 3.8, cy: 12.2, r: 1.9, stroke: 'currentColor', strokeWidth: 1.2 }),
+      h('circle', { cx: 12.2, cy: 12.2, r: 1.9, stroke: 'currentColor', strokeWidth: 1.2 }),
+      h('path', {
+        d: 'M7.1 5.3 4.7 10.4M8.9 5.3l2.4 5.1M5.7 12.2h4.6',
+        stroke: 'currentColor', strokeWidth: 1.2, strokeLinecap: 'round',
+      }))
     }
 
     const BRIDGE = 'http://127.0.0.1:8791'
@@ -36,8 +51,7 @@ window.__ModuleLoader__.load({
         return fetch(BRIDGE + path, request)
       })
     }
-    /** 带源前缀的 JSON 请求；桥还是旧版（无 /api 路由）时回落到老路径，面板不至于白屏。 */
-    /** JSON POST（线程管理等写操作）。 */
+    /** JSON POST（线程管理等写操作）；桥还是旧版（无 /api 路由）时由 fetchWithSource 回落。 */
     function postJson(sourceId, path, body) {
       return bridgeApi(sourceId, path, {
         method: 'POST',
@@ -82,10 +96,42 @@ window.__ModuleLoader__.load({
       return path + (path.includes('?') ? '&' : '?') + 'session=' + encodeURIComponent(sessionId)
     }
 
-    const row = { display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', margin: '2px 0', border: 'none', borderRadius: 8, background: 'transparent', color: 'inherit', cursor: 'pointer' }
-    const muted = { opacity: 0.6, fontSize: 12 }
-    const smallBtn = { ...row, width: 'auto', padding: '4px 10px', background: 'rgba(127,127,127,0.14)', fontSize: 13 }
-    const bubble = { padding: '10px 12px', borderRadius: 10, background: 'rgba(127,127,127,0.08)', marginBottom: 8 }
+    /**
+     * DSH 设计令牌：颜色/字体/圆角全部走主题 CSS 变量（--dsw-*），
+     * 深浅色、字号设置、品牌色都由宿主决定，面板不写死颜色。
+     */
+    const surface = {
+      root: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, boxSizing: 'border-box', color: 'var(--dsw-alias-label-primary)', fontFamily: 'var(--dsw-font-family)', fontSize: 14 },
+      header: { display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--dsw-alias-border-l1)', flexWrap: 'wrap', flex: 'none' },
+      body: { flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px' },
+      footer: { flex: 'none', padding: '12px 16px', borderTop: '1px solid var(--dsw-alias-border-l1)' },
+      title: { margin: 0, fontSize: 16, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 },
+    }
+    const row = { display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', margin: '2px 0', border: 'none', borderRadius: 'var(--dsw-radius-sm)', background: 'transparent', color: 'var(--dsw-alias-label-primary)', cursor: 'pointer', font: 'inherit', fontSize: 14 }
+    const muted = { color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, lineHeight: '18px' }
+    const smallBtn = { ...row, width: 'auto', padding: '4px 10px', background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-border-l1)', fontSize: 13 }
+    const iconBtn = { ...row, width: 32, height: 32, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, lineHeight: 1 }
+    const card = { padding: '10px 12px', borderRadius: 'var(--dsw-radius-md)', border: '1px solid var(--dsw-alias-border-l1)', background: 'var(--dsw-alias-bg-layer-1)', marginBottom: 10 }
+    const bubbleUser = { ...card }
+    const bubbleAssistant = { padding: '2px 2px 12px', marginBottom: 2 }
+
+    /** 悬停/焦点态：内联样式表达不了，注入一次全局样式（跟随主题变量）。 */
+    const STYLE_ID = 'dsh-agents-panel-style'
+    function ensureStyles() {
+      try {
+        if (document.getElementById(STYLE_ID)) return
+        const style = document.createElement('style')
+        style.id = STYLE_ID
+        style.textContent = [
+          '.dsh-agents-row:hover{background:var(--dsw-alias-bg-layer-2)}',
+          '.dsh-agents-row:active{background:var(--dsw-alias-bg-layer-3)}',
+          '.dsh-agents-row:focus-visible{outline:1px solid var(--dsw-alias-border-l3);outline-offset:-1px}',
+          '.dsh-agents-input:focus{outline:none;border-color:var(--dsw-alias-border-l3)}',
+          '.dsh-agents-send:disabled{opacity:.45;cursor:default}',
+        ].join('\n')
+        document.head.appendChild(style)
+      } catch (error) { /* 无 DOM 环境忽略 */ }
+    }
 
     function OctopPanel(props) {
       const ctx = props && props.ctx ? props.ctx : null
@@ -309,29 +355,24 @@ window.__ModuleLoader__.load({
           .finally(() => setSending(false))
       }
 
-      const back = action => h('button', { type: 'button', style: { ...row, width: 'auto', padding: '4px 10px' }, onClick: action }, '←')
+      const back = action => h('button', { type: 'button', style: iconBtn, onClick: action, 'aria-label': '返回' }, '←')
 
       if (error) {
-        return h('div', { style: { padding: 24 } },
-          h('h2', { style: { margin: '0 0 8px', fontSize: 18 } }, PANEL_TITLE),
-          h('p', { style: { color: '#d9534f', whiteSpace: 'pre-wrap' } }, error),
-          lastPrompt
-            ? h('button', {
-              type: 'button',
-              style: { ...row, width: 'auto', padding: '6px 12px', background: 'rgba(127,127,127,0.18)' },
-              onClick: () => { setError(''); send(lastPrompt, true) },
-            }, '重试上一条')
-            : null,
-          h('button', {
-            type: 'button',
-            style: { ...row, width: 'auto', padding: '6px 12px', background: 'rgba(127,127,127,0.18)' },
-            onClick: () => { setError(''); setExpert(null); setThread(null); setHistory(null); setThreads(null) },
-          }, '返回源列表'))
+        return h('div', { style: surface.root },
+          h('div', { style: surface.header }, h('h2', { style: surface.title }, PANEL_TITLE)),
+          h('div', { style: surface.body },
+            h('p', { style: { color: 'var(--dsw-alias-state-warn-label, #d9534f)', whiteSpace: 'pre-wrap', lineHeight: '22px' } }, error),
+            h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+              lastPrompt ? h('button', { type: 'button', style: smallBtn, onClick: () => { setError(''); send(lastPrompt, true) } }, '重试上一条') : null,
+              h('button', { type: 'button', style: smallBtn, onClick: () => { setError(''); setExpert(null); setThread(null); setHistory(null); setThreads(null) } }, '返回源列表'))))
       }
 
       if (!expert) {
-        return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
-          h('h2', { style: { margin: '0 0 12px', fontSize: 18, fontWeight: 600 } }, PANEL_TITLE),
+        return h('div', { style: surface.root },
+          h('div', { style: surface.header },
+            h('h2', { style: { ...surface.title, fontSize: 18 } }, PANEL_TITLE),
+            h('span', { style: muted }, '选择来源')),
+          h('div', { style: surface.body },
           sources.length > 1 ? h('div', { style: { display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' } },
             sources.map(item => h('button', {
               key: item.id,
@@ -344,41 +385,48 @@ window.__ModuleLoader__.load({
                 padding: '4px 10px',
                 borderRadius: 999,
                 cursor: item.available === false ? 'default' : 'pointer',
-                border: item.id === source ? '1px solid rgba(127,127,127,0.75)' : '1px solid rgba(127,127,127,0.3)',
-                background: item.id === source ? 'rgba(127,127,127,0.14)' : 'transparent',
-                color: 'inherit',
-                opacity: item.available === false ? 0.4 : (item.id === source ? 1 : 0.7),
+                border: item.id === source ? '1px solid var(--dsw-alias-border-l3)' : '1px solid var(--dsw-alias-border-l1)',
+                background: item.id === source ? 'var(--dsw-alias-bg-layer-2)' : 'transparent',
+                color: item.id === source ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)',
+                opacity: item.available === false ? 0.4 : 1,
               },
             }, item.label + (item.available === false ? '（未接入）' : '')))) : null,
-          experts === null ? h('p', { style: muted }, '加载专家…') : null,
-          experts !== null && experts.length === 0 ? h('p', { style: muted }, '没有可调用的专家') : null,
-          (experts || []).map(item => h('button', { key: item.id, type: 'button', style: row, onClick: () => openExpert(item) },
-            h('div', { style: { fontWeight: 500 } }, item.name),
-            h('div', { style: muted }, item.description || item.id))))
+            experts === null ? h('p', { style: muted }, '加载专家…') : null,
+            experts !== null && experts.length === 0 ? h('p', { style: muted }, '没有可调用的专家') : null,
+            (experts || []).map(item => h('button', { key: item.id, type: 'button', className: 'dsh-agents-row', style: row, onClick: () => openExpert(item) },
+              h('div', { style: { fontWeight: 500 } }, item.name),
+              h('div', { style: muted }, item.description || item.id)))))
       }
 
       if (!thread) {
-        return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 } },
+        return h('div', { style: surface.root },
+          h('div', { style: surface.header },
             back(() => window.history.back()),
-            h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 600 } }, expert.name)),
-          threads === null ? h('p', { style: muted }, '加载线程…') : null,
-          threads !== null && threads.length === 0 ? h('p', { style: muted }, '这个专家还没有线程') : null,
-          h('button', { type: 'button', style: { ...row, background: 'rgba(127,127,127,0.14)' }, onClick: () => { setThread({ id: '', title: '新对话', writable: true }); setHistory([]); setEditingTitle(null); setConfirmHide(false) } }, '＋ 新对话'),
-          (threads || []).map(item => h('button', { key: item.id, type: 'button', style: row, onClick: () => openThread(item) },
-            h('div', { style: { fontWeight: 500 } }, item.title || '(无标题)'),
-            h('div', { style: muted }, '' + (item.updatedAt || item.id)))))
+            h('h2', { style: surface.title }, expert.name)),
+          h('div', { style: surface.body },
+            h('button', {
+              type: 'button',
+              className: 'dsh-agents-row',
+              style: { ...row, background: 'var(--dsw-alias-bg-layer-2)', marginBottom: 8 },
+              onClick: () => { setThread({ id: '', title: '新对话', writable: true }); setHistory([]); setEditingTitle(null); setConfirmHide(false) },
+            }, '＋ 新对话'),
+            threads === null ? h('p', { style: muted }, '加载线程…') : null,
+            threads !== null && threads.length === 0 ? h('p', { style: muted }, '这个专家还没有线程') : null,
+            (threads || []).map(item => h('button', { key: item.id, type: 'button', className: 'dsh-agents-row', style: row, onClick: () => openThread(item) },
+              h('div', { style: { fontWeight: 500 } }, item.title || '(无标题)'),
+              h('div', { style: muted }, String(item.updatedAt || item.id))))))
       }
 
       const canManage = Boolean(thread && thread.id)
-      return h('div', { style: { padding: 24, boxSizing: 'border-box' } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' } },
+      return h('div', { style: surface.root },
+        h('div', { style: surface.header },
           back(() => window.history.back()),
           editingTitle === null
-            ? h('h2', { style: { margin: 0, fontSize: 16, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, thread.title || thread.id)
+            ? h('h2', { style: surface.title }, thread.title || thread.id)
             : h('input', {
               value: editingTitle,
-              style: { flex: 1, minWidth: 120, padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.35)', background: 'transparent', color: 'inherit', font: 'inherit' },
+              className: 'dsh-agents-input',
+              style: { flex: 1, minWidth: 120, padding: '6px 10px', borderRadius: 'var(--dsw-radius-sm)', border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)', font: 'inherit' },
               onChange: event => setEditingTitle(event.target.value),
               onKeyDown: event => {
                 if (event.key === 'Enter') saveTitle()
@@ -387,40 +435,49 @@ window.__ModuleLoader__.load({
             }),
           canManage && editingTitle === null ? h('button', { type: 'button', style: smallBtn, onClick: () => { setEditingTitle(thread.title || ''); setConfirmHide(false) } }, '改名') : null,
           canManage && editingTitle !== null ? h('button', { type: 'button', style: smallBtn, onClick: saveTitle }, '保存') : null,
-          canManage ? h('button', { type: 'button', style: { ...smallBtn, color: confirmHide ? '#d9534f' : 'inherit' }, onClick: hideThread }, confirmHide ? '确认隐藏？' : '隐藏') : null),
-        history === null ? h('p', { style: muted }, '加载历史…') : null,
-        (history || []).map((message, index) => h('div', { key: index, style: bubble },
-          h('div', { style: { ...muted, marginBottom: 4 } }, message.role),
-          h('div', { style: { whiteSpace: 'pre-wrap' } }, message.text))),
-        approval && source === 'octop' ? h('div', { style: { ...bubble, border: '1px solid #d9a441' } },
-          h('div', { style: { fontWeight: 600, marginBottom: 6 } }, '专家在等审批'),
-          h('div', { style: { ...muted, whiteSpace: 'pre-wrap', marginBottom: 8 } }, approval.summary),
-          h('div', { style: { display: 'flex', gap: 8 } },
-            h('button', { type: 'button', style: { ...row, width: 'auto', padding: '6px 12px', background: 'rgba(127,127,127,0.18)' }, onClick: () => decide('approve') }, '允许'),
-            h('button', { type: 'button', style: { ...row, width: 'auto', padding: '6px 12px', background: 'rgba(127,127,127,0.18)' }, onClick: () => decide('reject') }, '拒绝'))) : null,
-        h('div', { style: { display: 'flex', gap: 8, marginTop: 12 } },
-          h('textarea', {
-            value: draft,
-            placeholder: source === 'dsh' ? '给这个 DSH 子 agent 发消息…' : '给这个专家发消息…',
-            rows: 2,
-            style: { flex: 1, resize: 'vertical', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(127,127,127,0.35)', background: 'transparent', color: 'inherit', font: 'inherit' },
-            onChange: event => setDraft(event.target.value),
-          }),
-          sending
-            ? h('button', {
-              type: 'button',
-              style: { ...row, width: 'auto', padding: '8px 14px', background: 'rgba(217,83,79,0.18)' },
-              onClick: stop,
-            }, '停止')
-            : h('button', {
-              type: 'button',
-              disabled: draft.trim() === '',
-              style: { ...row, width: 'auto', padding: '8px 14px', background: 'rgba(127,127,127,0.18)', opacity: draft.trim() === '' ? 0.5 : 1 },
-              onClick: () => send(),
-            }, '发送')))
+          canManage ? h('button', { type: 'button', style: { ...smallBtn, color: confirmHide ? 'var(--dsw-alias-state-warn-label, #d9534f)' : 'inherit' }, onClick: hideThread }, confirmHide ? '确认隐藏？' : '隐藏') : null),
+        h('div', { style: surface.body },
+          history === null ? h('p', { style: muted }, '加载历史…') : null,
+          (history || []).map((message, index) => message.role === 'user'
+            ? h('div', { key: index, style: bubbleUser },
+              h('div', { style: { ...muted, marginBottom: 4 } }, '你'),
+              h('div', { style: { whiteSpace: 'pre-wrap', lineHeight: '22px' } }, message.text))
+            : h('div', { key: index, style: bubbleAssistant },
+              h('div', { style: { ...muted, marginBottom: 4 } }, message.role === 'assistant' ? '助手' : message.role),
+              h('div', { style: { whiteSpace: 'pre-wrap', lineHeight: '22px' } }, message.text))),
+          approval && source === 'octop' ? h('div', { style: { ...card, borderColor: 'var(--dsw-alias-state-warn-label, #d9a441)' } },
+            h('div', { style: { fontWeight: 600, marginBottom: 6 } }, '专家在等审批'),
+            h('div', { style: { ...muted, whiteSpace: 'pre-wrap', marginBottom: 8 } }, approval.summary),
+            h('div', { style: { display: 'flex', gap: 8 } },
+              h('button', { type: 'button', style: smallBtn, onClick: () => decide('approve') }, '允许'),
+              h('button', { type: 'button', style: smallBtn, onClick: () => decide('reject') }, '拒绝'))) : null),
+        h('div', { style: surface.footer },
+          h('div', { style: { display: 'flex', gap: 8, alignItems: 'flex-end' } },
+            h('textarea', {
+              value: draft,
+              placeholder: source === 'dsh' ? '给 DSH 子 agent 发消息…' : '给这位专家发消息…',
+              rows: 2,
+              className: 'dsh-agents-input',
+              style: { flex: 1, resize: 'vertical', padding: '8px 10px', borderRadius: 'var(--dsw-radius-md)', border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)', font: 'inherit', lineHeight: '22px', minHeight: 52 },
+              onChange: event => setDraft(event.target.value),
+            }),
+            sending
+              ? h('button', {
+                type: 'button',
+                style: { ...row, width: 'auto', padding: '8px 14px', borderRadius: 'var(--dsw-radius-md)', border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-layer-2)' },
+                onClick: stop,
+              }, '停止')
+              : h('button', {
+                type: 'button',
+                disabled: draft.trim() === '',
+                className: 'dsh-agents-send',
+                style: { ...row, width: 'auto', padding: '8px 14px', borderRadius: 'var(--dsw-radius-md)', background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-on-color, #fff)', fontWeight: 500 },
+                onClick: () => send(),
+              }, '发送'))))
     }
 
     function apply(ctx) {
+      ensureStyles()
       const RemotePanel = () => h(OctopPanel, { ctx })
       ctx.slots.inject(`main`, () => ctx.slots.register({ name: `main`, key: PANEL_ID }, RemotePanel))
       ctx.slots.inject(`sidebar.panellist`, () => ctx.slots.register(
