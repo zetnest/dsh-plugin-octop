@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Octop 面板 · DSH 风格预览</title>
+<style>
+  :root {
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --bg-base: #ffffff;
+    --bg-layer-1: #ffffff;
+    --hover: rgba(0, 0, 0, 0.04);
+    --active: rgba(0, 0, 0, 0.07);
+    --label-primary: rgb(15, 17, 21);
+    --label-secondary: rgb(97, 102, 107);
+    --label-tertiary: rgb(129, 133, 140);
+    --border-1: rgba(0, 0, 0, 0.04);
+    --border-2: rgba(0, 0, 0, 0.10);
+    --border-3: rgba(0, 0, 0, 0.12);
+    --primary: rgb(15, 17, 21);
+    --on-primary: #ffffff;
+    --warn: #b45309;
+    --page: #f2f3f5;
+  }
+  [data-theme="dark"] {
+    --bg-base: rgb(28, 28, 30);
+    --bg-layer-1: rgb(35, 35, 36);
+    --hover: rgba(255, 255, 255, 0.06);
+    --active: rgba(255, 255, 255, 0.10);
+    --label-primary: rgb(249, 250, 251);
+    --label-secondary: rgb(207, 211, 214);
+    --label-tertiary: rgb(173, 178, 184);
+    --border-1: rgba(255, 255, 255, 0.06);
+    --border-2: rgba(255, 255, 255, 0.12);
+    --border-3: rgba(255, 255, 255, 0.16);
+    --primary: rgb(249, 250, 251);
+    --on-primary: rgb(15, 17, 21);
+    --warn: #f0a94a;
+    --page: #0f1115;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--page);
+    color: var(--label-primary);
+    font-family: var(--font);
+    font-size: 14px;
+    transition: background .2s, color .2s;
+  }
+  .toolbar { display: flex; align-items: center; gap: 12px; max-width: 1280px; margin: 0 auto 20px; }
+  .toolbar h1 { font-size: 16px; font-weight: 600; margin: 0; }
+  .toolbar .hint { color: var(--label-tertiary); font-size: 12px; }
+  .toolbar button {
+    margin-left: auto; font: inherit; font-size: 13px; cursor: pointer;
+    color: var(--label-primary); background: var(--bg-layer-1);
+    border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 6px 12px;
+  }
+  .frames { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 1280px; margin: 0 auto; }
+  .frame {
+    width: 360px; height: 720px; display: flex; flex-direction: column;
+    background: var(--bg-base); border: 1px solid var(--border-2);
+    border-radius: var(--radius-md); overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .08);
+  }
+  .caption { text-align: center; color: var(--label-tertiary); font-size: 12px; padding: 8px 0 0; }
+  .header {
+    display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border-1); flex: none;
+  }
+  .header h2 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .header .muted { font-size: 12px; color: var(--label-tertiary); }
+  .body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px; }
+  .footer { flex: none; padding: 12px 16px; border-top: 1px solid var(--border-1); }
+  .icon-btn {
+    width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 16px; color: var(--label-secondary); background: transparent; border: 0;
+    border-radius: var(--radius-sm); cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--hover); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip {
+    font-size: 12px; line-height: 18px; padding: 4px 12px; border-radius: 999px;
+    color: var(--label-tertiary); border: 1px solid var(--border-1); background: transparent;
+    cursor: pointer; font-family: inherit;
+  }
+  .chip.on { color: var(--label-primary); border-color: var(--border-3); background: var(--hover); }
+  .chip.off { opacity: .4; cursor: default; }
+  .row {
+    display: block; width: 100%; text-align: left; padding: 10px 12px; margin: 2px 0;
+    border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--label-primary);
+    font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .row:hover { background: var(--hover); }
+  .row .name { font-weight: 500; }
+  .row .desc { color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+  .row.accent { background: var(--hover); margin-bottom: 8px; }
+  .muted { color: var(--label-tertiary); font-size: 12px; line-height: 18px; }
+  .small-btn {
+    font: inherit; font-size: 13px; padding: 4px 10px; border-radius: var(--radius-sm);
+    color: var(--label-primary); background: var(--hover); border: 1px solid var(--border-1); cursor: pointer;
+  }
+  .bubble-user {
+    padding: 10px 12px; border-radius: var(--radius-md);
+    border: 1px solid var(--border-1); background: var(--bg-layer-1); margin-bottom: 10px;
+  }
+  .bubble-assistant { padding: 2px 2px 12px; margin-bottom: 2px; }
+  .role { color: var(--label-tertiary); font-size: 12px; line-height: 18px; margin-bottom: 4px; }
+  .text { white-space: pre-wrap; line-height: 22px; }
+  .composer { display: flex; gap: 8px; align-items: flex-end; }
+  .composer textarea {
+    flex: 1; min-height: 52px; resize: vertical; padding: 8px 10px; line-height: 22px;
+    border-radius: var(--radius-md); border: 1px solid var(--border-2);
+    background: var(--bg-layer-1); color: var(--label-primary); font: inherit;
+  }
+  .composer textarea:focus { outline: none; border-color: var(--border-3); }
+  .primary-btn {
+    font: inherit; font-size: 14px; font-weight: 500; padding: 8px 14px; border: 0;
+    border-radius: var(--radius-md); background: var(--primary); color: var(--on-primary); cursor: pointer;
+  }
+  .ghost-btn {
+    font: inherit; font-size: 14px; padding: 8px 14px; border-radius: var(--radius-md);
+    border: 1px solid var(--border-2); background: var(--hover); color: var(--label-primary); cursor: pointer;
+  }
+  .banner {
+    border: 1px solid var(--warn); border-radius: var(--radius-md); padding: 10px 12px; margin-top: 8px;
+  }
+  .banner .t { font-weight: 600; margin-bottom: 6px; }
+  .banner .s { color: var(--label-tertiary); font-size: 12px; white-space: pre-wrap; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <h1>Octop 面板 · DSH 风格预览</h1>
+    <span class="hint">色值取自 DSH 主题（--dsw-alias-*），可切换深浅色</span>
+    <button id="theme">切换到深色</button>
+  </div>
+
+  <div class="frames">
+    <div class="frame">
+      <div class="header"><h2>Octop</h2><span class="muted">选择来源</span></div>
+      <div class="body">
+        <div class="chips">
+          <button class="chip on">Octop</button>
+          <button class="chip">DSH</button>
+          <button class="chip off">ACP（未接入）</button>
+        </div>
+        <button class="row">
+          <div class="name">小通 · 通用助手</div>
+          <div class="desc">友好的通用助手，无特定技能，适合作为起点或日常对话。</div>
+        </button>
+        <button class="row">
+          <div class="name">UI designer</div>
+          <div class="desc">专注界面布局、视觉层级与交互细节。</div>
+        </button>
+        <button class="row">
+          <div class="name">运维工程师 Ops</div>
+          <div class="desc">精通 Linux / K8s / 数据库的 Shell 命令专家。</div>
+        </button>
+        <p class="muted">共 6 位专家</p>
+      </div>
+    </div>
+    <div class="caption">① 源 + 专家列表</div>
+
+    <div class="frame">
+      <div class="header">
+        <button class="icon-btn">←</button>
+        <h2>小通 · 通用助手</h2>
+      </div>
+      <div class="body">
+        <button class="row accent">＋ 新对话</button>
+        <button class="row">
+          <div class="name">排查 Nginx 502</div>
+          <div class="desc">2026-11-21T09:12:00.000Z</div>
+        </button>
+        <button class="row">
+          <div class="name">写一个部署脚本</div>
+          <div class="desc">2026-11-20T18:03:11.000Z</div>
+        </button>
+        <button class="row">
+          <div class="name">你好</div>
+          <div class="desc">2026-11-20T16:00:24.492Z</div>
+        </button>
+      </div>
+    </div>
+    <div class="caption">② 线程列表（可改名 / 隐藏）</div>
+
+    <div class="frame">
+      <div class="header">
+        <button class="icon-btn">←</button>
+        <h2>排查 Nginx 502</h2>
+        <button class="small-btn">改名</button>
+        <button class="small-btn">隐藏</button>
+      </div>
+      <div class="body">
+        <div class="bubble-user">
+          <div class="role">你</div>
+          <div class="text">帮我看下 Nginx 为什么 502，日志里 upstream 超时。</div>
+        </div>
+        <div class="bubble-assistant">
+          <div class="role">助手</div>
+          <div class="text">先确认三件事：上游进程是否存活、upstream 超时配置、以及后端是否有慢查询。
+可以用这两条命令快速定位：
+  ps -ef | grep upstream
+  tail -n 200 /var/log/nginx/error.log | grep upstream</div>
+        </div>
+        <div class="banner">
+          <div class="t">专家在等审批</div>
+          <div class="s">执行 shell 命令：systemctl restart nginx</div>
+          <div style="display:flex;gap:8px">
+            <button class="small-btn">允许</button>
+            <button class="small-btn">拒绝</button>
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <div class="composer">
+          <textarea rows="2" placeholder="给这位专家发消息…">先看下 upstream 配置</textarea>
+          <button class="primary-btn">发送</button>
+        </div>
+      </div>
+    </div>
+    <div class="caption">③ 对话 + 审批 + 输入区（固定在底部）</div>
+  </div>
+
+<script>
+  var root = document.documentElement
+  var button = document.getElementById('theme')
+  button.addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') === 'dark'
+    root.setAttribute('data-theme', dark ? 'light' : 'dark')
+    button.textContent = dark ? '切换到深色' : '切换到浅色'
+  })
+</script>
+</body>
+</html>
