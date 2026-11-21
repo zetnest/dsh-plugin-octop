@@ -112,6 +112,11 @@
 - 停止后的空白提示已改成「（已停止）」；面板每轮结束会刷新线程列表（新对话不用回退就能看到）。
 - 复查用：`GET /api/dsh/threads?agent=dsh&session=<会话id>`。
 
+## 会话迁移
+- 见 `docs/MIGRATION.md`：手机导出 ZIP（`/export` 命令，canonical JSONL + 子会话 + 附件），
+  电脑端放到 `<sessions-root>/<项目>/<session-id>/session.v4.jsonl` 即可被识别；改 header 的 cwd。
+  没有一键导入 UI；附件需另外导入。
+
 ## 参考资料
 - `docs/dsh-subagent-api-notes.md`：并行会话留下的源码级 API 笔记（含本仓库的实测校正），
   写 dsh 源前值得先扫一遍。

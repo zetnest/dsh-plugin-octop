@@ -168,6 +168,8 @@ window.__ModuleLoader__.load({
      * id 必须等于该应用注册到 main 槽位的 key。
      */
     const APPS_GLOBAL = '__DSH_APPS__'
+    /** 应用中心是否正在显示（系统返回键用：在应用中心按返回 = 回对话）。 */
+    let appsVisible = false
     function appRegistry() {
       try {
         const current = window[APPS_GLOBAL]
@@ -205,6 +207,10 @@ window.__ModuleLoader__.load({
     function AppCenter(props) {
       const ctx = props && props.ctx ? props.ctx : null
       const apps = useApps()
+      React.useEffect(() => {
+        appsVisible = true
+        return () => { appsVisible = false }
+      }, [])
       const sorted = apps.slice().sort((a, b) => (a.order || 100) - (b.order || 100))
       const open = app => {
         try {
@@ -273,6 +279,16 @@ window.__ModuleLoader__.load({
             if (threadRef.current !== null) { setThread(null); setHistory(null); setApproval(null) }
             else { setExpert(null); setThreads(null) }
             return true
+          }
+          // 应用中心：返回键回对话（selectPanel(null)）
+          if (appsVisible) {
+            try {
+              const layout = ctx && typeof ctx.get === 'function' ? ctx.get('layout') : null
+              if (layout && typeof layout.selectPanel === 'function') {
+                layout.selectPanel(null)
+                return true
+              }
+            } catch (error) { /* 忽略 */ }
           }
           return original(...args)
         }
